@@ -68,6 +68,8 @@ pub(crate) enum Action {
     SearchNext,
     /// Jump to the previous search match.
     SearchPrev,
+    /// Toggle showing orphaned annotations at their last-known location.
+    ShowOrphans,
     Yes,
     No,
 }
@@ -76,8 +78,8 @@ use Action::{
     Approve, Archive, AttachImage, Back, Bottom, ClearAll, ClearBlock, Comment, Confirm, CopySelection,
     CycleFocus, Delete, Down, Edit, FinishReview, Interrupt, Left, LineEnd, LineStart, LooksGood, MoveCursor,
     No, OpenInEditor, PageDown, PageUp, PickMessage, QuickOpen, Quit, Reload, Remove, RemoveImage, ResendAll,
-    ReviewMenu, Right, Search, SearchNext, SearchPrev, Send, SendAndClose, ToggleHidden, ToggleTree, Top,
-    UndoFinish, Up, Visual, VisualLine, WordBack, WordEnd, WordForward, Yes,
+    ReviewMenu, Right, Search, SearchNext, SearchPrev, Send, SendAndClose, ShowOrphans, ToggleHidden,
+    ToggleTree, Top, UndoFinish, Up, Visual, VisualLine, WordBack, WordEnd, WordForward, Yes,
 };
 
 /// Browsing, before the focused pane gets the key.
@@ -99,6 +101,7 @@ pub(crate) const GLOBAL: &[Action] = &[
     QuickOpen,
     PickMessage,
     Search,
+    ShowOrphans,
 ];
 pub(crate) const TREE: &[Action] = &[Down, Up, Confirm, Right, ToggleHidden, Back];
 pub(crate) const RAIL: &[Action] = &[Down, Up, Confirm, Edit, Remove, AttachImage, RemoveImage, Back];
@@ -307,13 +310,14 @@ const DEFAULTS: &[(Action, &[Key])] = &[
     (Search, &[ch('/')]),
     (SearchNext, &[ch('n')]),
     (SearchPrev, &[ch('N')]),
+    (ShowOrphans, &[ch('O')]),
     (Yes, &[ch('y'), ch('Y')]),
     (No, &[ch('n'), ch('N')]),
 ];
 
 /// Actions added after configs were written: `approve` (live only in a gated review), `copy`
 /// (on a waiting selection), `word-end`, `visual-line`, and the document search keys.
-const LATE: &[Action] = &[Approve, CopySelection, WordEnd, VisualLine, Search, SearchNext, SearchPrev];
+const LATE: &[Action] = &[Approve, CopySelection, WordEnd, VisualLine, Search, SearchNext, SearchPrev, ShowOrphans];
 
 /// The keys bound to each action. A `[keys]` entry replaces that action's keys and leaves the
 /// others at their defaults; an empty list unbinds the action.
@@ -471,6 +475,7 @@ impl Action {
             Self::Search => "search",
             Self::SearchNext => "search-next",
             Self::SearchPrev => "search-prev",
+            Self::ShowOrphans => "show-orphans",
             Self::Yes => "yes",
             Self::No => "no",
         }

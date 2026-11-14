@@ -146,6 +146,10 @@ impl App {
                 self.begin_search();
                 return Ok(());
             }
+            Some(Action::ShowOrphans) => {
+                self.toggle_show_orphans();
+                return Ok(());
+            }
             _ => {}
         }
         match self.focus {

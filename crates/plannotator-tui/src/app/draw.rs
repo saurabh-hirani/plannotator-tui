@@ -163,6 +163,8 @@ impl App {
 
     fn draw_document(&self, frame: &mut Frame, gutter: Rect, doc: Rect) {
         let placed = self.open.store.placed();
+        let orphans =
+            if self.show_orphans { self.open.store.orphan_placements(&self.open.doc) } else { Vec::new() };
         let text_selection_active = self.selection.is_some();
         let doc_focused = self.focus == Focus::Document;
         let buf = frame.buffer_mut();
@@ -199,6 +201,27 @@ impl App {
                     }
                 };
                 buf.set_style(Rect { x: doc.x + col as u16, y: screen_y, width: 1, height: 1 }, style);
+            }
+
+            // Orphans, when shown: their last-known span is tinted with the stale
+            // background and dimmed, so it reads as "a comment was here" rather than a live
+            // anchor. Drawn under search highlighting, over nothing else on the row.
+            let mut row_has_orphan = false;
+            if !orphans.is_empty() {
+                for (col, cell) in row.cells.iter().enumerate().take(usize::from(doc.width)) {
+                    let Some(offset) = cell else { continue };
+                    // A zero-length clamped range (its text is gone entirely) still marks
+                    // the one cell at its start, so the orphan is not invisible.
+                    let hit = orphans
+                        .iter()
+                        .any(|o| o.range.contains(offset) || (o.range.is_empty() && o.range.start == *offset));
+                    if !hit {
+                        continue;
+                    }
+                    row_has_orphan = true;
+                    let style = Style::new().bg(palette().orphan_bg).add_modifier(Modifier::DIM);
+                    buf.set_style(Rect { x: doc.x + col as u16, y: screen_y, width: 1, height: 1 }, style);
+                }
             }
 
             // Search matches sit on top of annotation tints: every match gets the search
@@ -245,6 +268,9 @@ impl App {
             let marker = match (block == self.selected, row_has_annotation) {
                 (true, _) => Span::styled("▍", Style::new().fg(palette().accent)),
                 (false, true) => Span::styled("▍", Style::new().fg(palette().comment)),
+                (false, false) if row_has_orphan => {
+                    Span::styled("▍", Style::new().fg(palette().orphan_bg).add_modifier(Modifier::DIM))
+                }
                 (false, false) => Span::raw(" "),
             };
             buf.set_span(gutter.x, screen_y, &marker, 1);
@@ -417,7 +443,79 @@ impl App {
             bubbles.push((rect, placed.annotation.id.clone()));
             next_y = y + height;
         }
+        // Orphans, when shown, follow the live notes: dim, titled "orphan", and left out of
+        // `bubbles` so rail navigation, editing and mouse hits still touch only live notes.
+        // Their body is readable here even though the anchor no longer resolves.
+        if self.show_orphans {
+            self.draw_orphan_rail(frame, rail, view_end, next_y);
+        }
         self.geometry.bubbles = bubbles;
+    }
+
+    /// The orphan bubbles below the live notes. Each names what the comment pointed at (the
+    /// text now gone) and its body, dim throughout so it reads as stale.
+    fn draw_orphan_rail(&self, frame: &mut Frame, rail: Rect, view_end: usize, mut next_y: u16) {
+        for orphan in self.open.store.orphan_placements(&self.open.doc) {
+            if next_y >= rail.bottom() {
+                break;
+            }
+            let block = self.open.doc.block_containing(orphan.range.start);
+            let anchor_row = block
+                .and_then(|b| {
+                    self.open
+                        .layout
+                        .first_row_in_range(b, &orphan.range)
+                        .or_else(|| self.open.layout.blocks.get(b).map(|r| r.first_row))
+                })
+                .unwrap_or(0);
+            if anchor_row >= view_end {
+                continue;
+            }
+            let anchored_y = rail.y + anchor_row.saturating_sub(self.scroll) as u16;
+            let y = anchored_y.max(next_y);
+            let body = if orphan.annotation.body.is_empty() {
+                label(orphan.kind()).to_owned()
+            } else {
+                orphan.annotation.body.clone()
+            };
+            let inner_width = usize::from(rail.width.saturating_sub(4));
+            // Lead with what the comment pointed at (the text now gone), so an orphan reads
+            // on its own: `on: "…"`. Whitespace is collapsed to one line and the quote is
+            // trimmed to keep the bubble short.
+            let dim = Style::new().add_modifier(Modifier::DIM);
+            let quote = collapse_ws(orphan.annotation.anchor.stored_quote());
+            let mut lines: Vec<Line<'static>> = Vec::new();
+            if !quote.is_empty() {
+                let shown = truncate_chars(&quote, 48);
+                let on = format!("on: \u{201c}{shown}\u{201d}");
+                for row in wrap_line(&Line::from(on.as_str()), &[], inner_width) {
+                    lines.push(row.line.style(dim.add_modifier(Modifier::ITALIC)));
+                }
+            }
+            for row in wrap_line(&Line::from(body.as_str()), &[], inner_width) {
+                lines.push(row.line);
+            }
+            let height = (lines.len() as u16 + 2).min(rail.bottom().saturating_sub(y));
+            if height < 3 {
+                break;
+            }
+            let border = Style::new().fg(Color::DarkGray).add_modifier(Modifier::DIM);
+            let title = Span::styled(
+                format!(" \u{26d2} {} orphan {} ", glyph(orphan.kind()), short_id(&orphan.annotation.id)),
+                Style::new().fg(palette().orphan_bg).add_modifier(Modifier::DIM),
+            );
+            let bubble = Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(border)
+                .title(title);
+            let rect = Rect { x: rail.x, y, width: rail.width, height };
+            let inner = bubble.inner(rect);
+            frame.render_widget(bubble, rect);
+            let text_area = Rect { x: inner.x + 1, width: inner.width.saturating_sub(1), ..inner };
+            frame.render_widget(Paragraph::new(lines).style(dim), text_area);
+            next_y = y + height;
+        }
     }
 
     fn draw_footer(&mut self, frame: &mut Frame, mut area: Rect) {
@@ -605,6 +703,21 @@ impl App {
 fn short_id(id: &str) -> String {
     let tail: Vec<char> = id.chars().rev().take(5).collect();
     tail.into_iter().rev().collect()
+}
+
+/// Runs of whitespace (including newlines) collapsed to single spaces, trimmed. Keeps a
+/// multi-line quote on one line so it fits a rail bubble.
+fn collapse_ws(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// `s` cut to at most `max` characters, with an ellipsis when it was longer.
+fn truncate_chars(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_owned();
+    }
+    let kept: String = s.chars().take(max.saturating_sub(1)).collect();
+    format!("{kept}\u{2026}")
 }
 
 /// A picker's bottom help: the arrows that move its cursor, then the bound keys.

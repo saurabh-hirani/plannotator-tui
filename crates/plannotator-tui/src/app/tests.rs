@@ -1326,3 +1326,70 @@ fn a_search_match_is_highlighted_in_the_document() {
     });
     assert!(highlighted, "the gamma match paints the search background");
 }
+
+/// Seed one annotation, then swap the document so its quote is gone: it orphans in place.
+fn app_with_an_orphan() -> App {
+    use crate::doc::Document;
+    let source = DocumentSource::new(
+        "# Plan\n\nkeep this line\n".to_owned(),
+        "plan.md",
+        true,
+        Provenance::Stdin,
+    );
+    let mut app = App::open(source, 60, Box::new(Discard)).expect("app opens");
+    app.data_dir = scratch_data_dir();
+    let start = app.open.doc.source.find("keep this line").expect("present");
+    app.open
+        .store
+        .add(&app.open.doc, start..start + 14, "keep this line".into(), Kind::Comment, "the note".into())
+        .expect("add");
+    // Replace the document with one that no longer contains the quote, then re-resolve.
+    app.open.doc = Document::parse("# Plan\n\nTOTALLY rewritten body\n".to_owned());
+    app.open.layout = crate::layout::DocLayout::build(&app.open.doc, 60);
+    app.open.store.resolve_all(&app.open.doc);
+    app
+}
+
+#[test]
+fn show_orphans_toggles_off_by_default() {
+    let mut app = app_with_an_orphan();
+    assert_eq!(app.open.store.orphans(), 1, "the note orphaned");
+    assert!(!app.show_orphans, "orphans are hidden by default");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('O')))).expect("toggle on");
+    assert!(app.show_orphans);
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("1 orphan")));
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('O')))).expect("toggle off");
+    assert!(!app.show_orphans);
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("orphans hidden")));
+}
+
+#[test]
+fn a_shown_orphan_paints_the_orphan_background() {
+    use crate::theme::palette;
+    let mut app = app_with_an_orphan();
+    // Off: no orphan background anywhere.
+    let before = draw_sized(&mut app, 80, 20);
+    let _ = before;
+    app.show_orphans = true;
+    let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("terminal");
+    terminal.draw(|frame| app.draw(frame)).expect("draw");
+    let buffer = terminal.backend().buffer();
+    let painted = (0..buffer.area.height).any(|y| {
+        (0..buffer.area.width)
+            .filter_map(|x| buffer.cell((x, y)))
+            .any(|c| c.bg == palette().orphan_bg)
+    });
+    assert!(painted, "the shown orphan tints its last-known location");
+}
+
+#[test]
+fn a_shown_orphan_bubble_names_the_lost_quote() {
+    let mut app = app_with_an_orphan();
+    app.show_orphans = true;
+    // Wide enough that the rail is drawn.
+    let rows = draw_sized(&mut app, 120, 24);
+    let screen = rows.join("\n");
+    assert!(screen.contains("orphan"), "the orphan bubble is titled: {screen:?}");
+    assert!(screen.contains("on:"), "the bubble names what the comment pointed at");
+    assert!(screen.contains("keep this line"), "the lost quote is shown: {screen:?}");
+}

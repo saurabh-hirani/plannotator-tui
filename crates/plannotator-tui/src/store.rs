@@ -73,6 +73,21 @@ impl Placed<'_> {
     }
 }
 
+/// An orphaned annotation shown at its last-known location: the record plus the recorded
+/// byte range clamped into the current source. Owns its range because the range is derived
+/// (clamped), not a field of the store.
+#[derive(Debug, Clone)]
+pub(crate) struct OrphanPlacement<'a> {
+    pub(crate) annotation: &'a Annotation,
+    pub(crate) range: Range<usize>,
+}
+
+impl OrphanPlacement<'_> {
+    pub(crate) fn kind(&self) -> Kind {
+        self.annotation.anchor.kind()
+    }
+}
+
 /// Where a document's annotations live, and its legacy sidecar if one exists.
 #[derive(Debug, Clone)]
 pub(crate) struct Location {
@@ -303,6 +318,36 @@ impl Store {
         out
     }
 
+    /// Every orphaned annotation at its last-known location, clamped into the current
+    /// source. The range is where the anchor was recorded against an earlier version of the
+    /// document, so it is a best-effort "was here" position, never a resolved one: the
+    /// caller must present it as stale. Annotations with no recorded range (foreign
+    /// anchors) are dropped, since there is nowhere to point. In source order.
+    pub(crate) fn orphan_placements(&self, doc: &Document) -> Vec<OrphanPlacement<'_>> {
+        let len = doc.source.len();
+        let floor = |index: usize| {
+            let mut i = index.min(len);
+            while i > 0 && !doc.source.is_char_boundary(i) {
+                i -= 1;
+            }
+            i
+        };
+        let mut out: Vec<OrphanPlacement<'_>> = self
+            .annotations
+            .iter()
+            .zip(&self.resolved)
+            .filter(|(_, r)| **r == Resolution::Orphan)
+            .filter_map(|(annotation, _)| {
+                let recorded = annotation.anchor.recorded_range()?;
+                let start = floor(recorded.start);
+                let end = floor(recorded.end).max(start);
+                Some(OrphanPlacement { annotation, range: start..end })
+            })
+            .collect();
+        out.sort_by_key(|p| p.range.start);
+        out
+    }
+
     pub(crate) fn has_images(&self, id: &str) -> bool {
         self.annotations.iter().any(|a| a.id == id && !a.plannotator_tui.images.is_empty())
     }
@@ -460,5 +505,31 @@ mod tests {
         assert_eq!(reloaded.len(), 0, "the clear is saved");
         assert_eq!(reloaded.deliveries.len(), 1, "the send history stays");
         std::fs::remove_dir_all(&root).expect("cleanup");
+    }
+
+    #[test]
+    fn an_orphan_is_placed_at_its_clamped_last_known_range() {
+        let root = temp_root("orphan-place");
+        let location = Location::for_file(&root.join("data"), "proj", &root.join("doc.md"));
+        let source = "# A\n\nsecond thing\n".to_owned();
+        let doc = Document::parse(source.clone());
+        let mut store = Store::load(&location, &doc).expect("empty");
+        let start = source.find("second").expect("present");
+        store.add(&doc, start..start + 6, "second".into(), Kind::Comment, "note".into()).expect("add");
+
+        // Rewrite so the quote is gone: the annotation orphans on reload.
+        let edited = Document::parse("# A\n\nTOTALLY different\n".to_owned());
+        let reloaded = Store::load(&location, &edited).expect("reload");
+        assert_eq!(reloaded.orphans(), 1, "the quote is gone");
+        assert!(reloaded.placed().is_empty(), "orphans are not placed normally");
+
+        let orphans = reloaded.orphan_placements(&edited);
+        assert_eq!(orphans.len(), 1);
+        let placement = &orphans[0];
+        assert_eq!(placement.annotation.body, "note");
+        // The recorded range clamps into the current (shorter) source.
+        assert!(placement.range.end <= edited.source.len(), "clamped into the document");
+        assert!(edited.source.is_char_boundary(placement.range.start));
+        assert!(edited.source.is_char_boundary(placement.range.end));
     }
 }

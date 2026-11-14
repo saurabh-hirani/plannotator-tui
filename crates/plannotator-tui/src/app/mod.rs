@@ -226,6 +226,8 @@ pub(crate) struct App {
     search_matches: Vec<usize>,
     search_at: usize,
     search_query: String,
+    /// `show-orphans`: draw orphaned annotations at their last-known location, marked stale.
+    show_orphans: bool,
     /// Whether the terminal reports Shift+Enter distinctly (kitty keyboard protocol).
     pub(super) shift_enter: bool,
     pub(crate) keys: Keymap,
@@ -311,6 +313,7 @@ impl App {
             search_matches: Vec::new(),
             search_at: 0,
             search_query: String::new(),
+            show_orphans: false,
             shift_enter: false,
             keys: Keymap::default(),
             editor: None,
@@ -383,6 +386,24 @@ impl App {
         if shown && self.focus == Focus::Tree {
             self.focus = Focus::Document;
         }
+    }
+
+    /// Show or hide orphaned annotations at their last-known location. A view choice only:
+    /// orphans are counted and sent the same either way; this just draws them, marked
+    /// stale, so the body is readable. The count in the status tells the reader whether the
+    /// toggle will show anything.
+    fn toggle_show_orphans(&mut self) {
+        self.show_orphans = !self.show_orphans;
+        let orphans = self.open.store.orphans();
+        self.status = Some(if self.show_orphans {
+            match orphans {
+                0 => "showing orphans: none on this document".to_owned(),
+                1 => "showing 1 orphan at its last-known location".to_owned(),
+                n => format!("showing {n} orphans at their last-known location"),
+            }
+        } else {
+            "orphans hidden".to_owned()
+        });
     }
 
     /// Show or hide dot-prefixed entries in the tree. A view choice only: annotations
