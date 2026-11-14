@@ -67,11 +67,50 @@ pub(crate) struct DocLayout {
 
 fn render_block(doc: &Document, index: usize) -> (Text<'static>, Vec<LineOffsets>) {
     let source = doc.block_text(index);
-    let text = own(tui_markdown::from_str_with_options(source, &Options::new(Styles)));
+    let mut text = own(tui_markdown::from_str_with_options(source, &Options::new(Styles)));
+    if doc.blocks.get(index).map(|b| b.kind) == Some(BlockKind::List) && is_loose_list(source) {
+        space_top_level_items(&mut text);
+    }
     let plain: Vec<String> = text.lines.iter().map(ToString::to_string).collect();
     let base = doc.blocks.get(index).map_or(0, |b| b.range.start);
     let offsets = align(&plain, source, base);
     (text, offsets)
+}
+
+/// A top-level list whose items the source separated with blank lines. `tui-markdown`
+/// collapses that spacing; `space_top_level_items` puts it back so the TUI reads like the
+/// source does. A tight list (no blank lines between items) is left packed.
+fn is_loose_list(source: &str) -> bool {
+    source.lines().any(str::is_empty)
+}
+
+/// A rendered line that begins a top-level (unindented) list item: its first span starts
+/// with an unordered `"- "` marker or an ordered `"N. "` marker, with no leading indent.
+fn is_top_level_item(line: &Line<'_>) -> bool {
+    let Some(first) = line.spans.first() else { return false };
+    let content = first.content.as_ref();
+    if content.starts_with("- ") {
+        return true;
+    }
+    let digits = content.chars().take_while(char::is_ascii_digit).count();
+    digits > 0 && content[digits..].starts_with(". ")
+}
+
+/// Insert one blank line before every top-level item marker after the first, matching the
+/// blank lines the source put between loose-list items.
+fn space_top_level_items(text: &mut Text<'static>) {
+    let mut seen_item = false;
+    let mut spaced: Vec<Line<'static>> = Vec::with_capacity(text.lines.len());
+    for line in std::mem::take(&mut text.lines) {
+        if is_top_level_item(&line) {
+            if seen_item && !matches!(spaced.last(), Some(l) if l.spans.is_empty()) {
+                spaced.push(Line::default());
+            }
+            seen_item = true;
+        }
+        spaced.push(line);
+    }
+    text.lines = spaced;
 }
 
 fn own(text: Text<'_>) -> Text<'static> {
