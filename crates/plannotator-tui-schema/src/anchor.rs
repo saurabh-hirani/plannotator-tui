@@ -13,6 +13,7 @@
 //! deserialize: every field except `original_text` is optional and unknown keys are kept.
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -113,6 +114,31 @@ impl Anchor {
 
     pub fn kind(&self) -> Kind {
         self.plannotator_tui.as_ref().map_or(Kind::Comment, |e| e.kind)
+    }
+
+    /// The raw-source byte range this anchor was made against, if one was recorded. For an
+    /// orphan this is its last-known location, in the bytes of an earlier document version;
+    /// a caller must clamp it to the current source before using it.
+    pub fn recorded_range(&self) -> Option<Range<usize>> {
+        self.plannotator_tui
+            .as_ref()
+            .and_then(|e| e.source.as_ref())
+            .map(|s| s.start..s.end)
+    }
+
+    /// The raw-source text this anchor was attached to, as stored. For an orphan this is
+    /// the text that is now gone, so it is the clearest answer to "what did this point at".
+    /// Empty for a foreign anchor that stored no quote.
+    pub fn stored_quote(&self) -> &str {
+        self.plannotator_tui.as_ref().map_or("", |e| e.quote.as_str())
+    }
+
+    /// The stored context on each side of the quote: `(prefix, suffix)`, up to
+    /// [`CONTEXT_CHARS`] characters each. Empty strings when none was recorded.
+    pub fn stored_context(&self) -> (&str, &str) {
+        self.plannotator_tui
+            .as_ref()
+            .map_or(("", ""), |e| (e.prefix.as_str(), e.suffix.as_str()))
     }
 }
 

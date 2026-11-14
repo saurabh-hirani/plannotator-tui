@@ -304,6 +304,7 @@ screen show your keys. `plannotator-tui config` prints every action with its key
 | `quick-open` | `ctrl+p` | find a file by name in a folder review |
 | `search` | `/` | search the document text (plain substring) |
 | `search-next` `search-prev` | `n` `N` | jump to the next or previous search match |
+| `show-orphans` | `O` | show/hide orphaned annotations at their last-known location, marked stale |
 | `review-menu` | `m` | the Review menu |
 | `resend-all` `finish-review` `undo-finish` `archive` | `R` `F` `U` `H` | file and folder review actions |
 | `toggle-hidden` | `.` | show/hide dot-prefixed entries in the tree |
