@@ -18,6 +18,7 @@ mod replies;
 mod review;
 #[cfg(test)]
 mod review_test_support;
+mod search;
 mod selection;
 mod send;
 #[cfg(test)]
@@ -71,6 +72,8 @@ enum Mode {
     Pick,
     /// Quick Open: finding a file in the folder by name.
     FileSearch,
+    /// The `/` prompt: typing a substring to search the document text.
+    Search,
     /// Restoring annotations from finished file reviews.
     Archive,
     /// The header's Review menu is open over a file or folder review.
@@ -216,6 +219,13 @@ pub(crate) struct App {
     /// token. Feedback quotes rejoin them and carry no line labels.
     terminal_breaks: Option<Vec<usize>>,
     compose: Compose,
+    /// The `/` search query being typed, and the matches the last submitted query found.
+    /// `search_matches` holds the start byte offset of each match in `open.doc.source`;
+    /// `search_at` is the index of the current match within it.
+    search: Compose,
+    search_matches: Vec<usize>,
+    search_at: usize,
+    search_query: String,
     /// Whether the terminal reports Shift+Enter distinctly (kitty keyboard protocol).
     pub(super) shift_enter: bool,
     pub(crate) keys: Keymap,
@@ -297,6 +307,10 @@ impl App {
             message_session: None,
             terminal_breaks: None,
             compose: Compose::default(),
+            search: Compose::default(),
+            search_matches: Vec::new(),
+            search_at: 0,
+            search_query: String::new(),
             shift_enter: false,
             keys: Keymap::default(),
             editor: None,

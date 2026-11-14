@@ -62,6 +62,12 @@ pub(crate) enum Action {
     /// Copy the waiting selection to the clipboard.
     #[serde(rename = "copy")]
     CopySelection,
+    /// Open the `/` prompt to search the document text.
+    Search,
+    /// Jump to the next search match.
+    SearchNext,
+    /// Jump to the previous search match.
+    SearchPrev,
     Yes,
     No,
 }
@@ -70,8 +76,8 @@ use Action::{
     Approve, Archive, AttachImage, Back, Bottom, ClearAll, ClearBlock, Comment, Confirm, CopySelection,
     CycleFocus, Delete, Down, Edit, FinishReview, Interrupt, Left, LineEnd, LineStart, LooksGood, MoveCursor,
     No, OpenInEditor, PageDown, PageUp, PickMessage, QuickOpen, Quit, Reload, Remove, RemoveImage, ResendAll,
-    ReviewMenu, Right, Send, SendAndClose, ToggleHidden, ToggleTree, Top, UndoFinish, Up, Visual, VisualLine,
-    WordBack, WordEnd, WordForward, Yes,
+    ReviewMenu, Right, Search, SearchNext, SearchPrev, Send, SendAndClose, ToggleHidden, ToggleTree, Top,
+    UndoFinish, Up, Visual, VisualLine, WordBack, WordEnd, WordForward, Yes,
 };
 
 /// Browsing, before the focused pane gets the key.
@@ -92,6 +98,7 @@ pub(crate) const GLOBAL: &[Action] = &[
     OpenInEditor,
     QuickOpen,
     PickMessage,
+    Search,
 ];
 pub(crate) const TREE: &[Action] = &[Down, Up, Confirm, Right, ToggleHidden, Back];
 pub(crate) const RAIL: &[Action] = &[Down, Up, Confirm, Edit, Remove, AttachImage, RemoveImage, Back];
@@ -115,6 +122,8 @@ pub(crate) const DOCUMENT: &[Action] = &[
     ClearAll,
     AttachImage,
     RemoveImage,
+    SearchNext,
+    SearchPrev,
 ];
 /// Marking the selected block, tried only when no `DOCUMENT` action claims the key. They sit
 /// outside `SHARED` so a config that gave `a` or `d` to a document action keeps loading.
@@ -295,13 +304,16 @@ const DEFAULTS: &[(Action, &[Key])] = &[
     (LooksGood, &[ch('a')]),
     (Delete, &[ch('d')]),
     (CopySelection, &[ch('y')]),
+    (Search, &[ch('/')]),
+    (SearchNext, &[ch('n')]),
+    (SearchPrev, &[ch('N')]),
     (Yes, &[ch('y'), ch('Y')]),
     (No, &[ch('n'), ch('N')]),
 ];
 
 /// Actions added after configs were written: `approve` (live only in a gated review), `copy`
-/// (on a waiting selection), `word-end` and `visual-line`.
-const LATE: &[Action] = &[Approve, CopySelection, WordEnd, VisualLine];
+/// (on a waiting selection), `word-end`, `visual-line`, and the document search keys.
+const LATE: &[Action] = &[Approve, CopySelection, WordEnd, VisualLine, Search, SearchNext, SearchPrev];
 
 /// The keys bound to each action. A `[keys]` entry replaces that action's keys and leaves the
 /// others at their defaults; an empty list unbinds the action.
@@ -456,6 +468,9 @@ impl Action {
             Self::LooksGood => "looks-good",
             Self::Delete => "delete",
             Self::CopySelection => "copy",
+            Self::Search => "search",
+            Self::SearchNext => "search-next",
+            Self::SearchPrev => "search-prev",
             Self::Yes => "yes",
             Self::No => "no",
         }
