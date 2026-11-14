@@ -99,7 +99,7 @@ dimmed. The keys also work without opening the menu.
 | reply review | `S` send and close |
 | gated review | `A` approve; `E` send and finish; `q` dismiss |
 | document | `j`/`k` block; `c` comment on the block; `a` looks good; `d` delete; `x` clear its annotations; `X` clear every annotation on the document, after a `y`; `v` select with `hjkl` `w` `b` `e` `0` `$`, then `a`, `c` or `d` to act on it, `y` to copy it, or `Enter` for the toolbar; `V` select whole rows; `i` move the cursor with those keys first, then `v` to select from there; `I`/`D` attach or remove an image on the block's note |
-| search | `/` search the document text (plain substring), `Enter` jumps to the first match; `n`/`N` next/previous; `Esc` cancels the prompt; matches stay highlighted until the next search |
+| search | `/` search forward, `?` search backward (plain substring), `Enter` jumps to the first match in that direction; `n`/`N` next/previous (next follows the search direction); `Esc` cancels the prompt, and in the document clears an active search before it quits; matches stay highlighted until the next search |
 | toolbar | `a` looks good · `c` comment · `d` delete · `y` copy · `Esc` |
 | notes | `j`/`k`; `e` edit; `x` remove; `I` attach an image, `D` remove the last; click a bubble |
 | file/folder review | `E` send new · `m` review menu (`R` resend all · `F` finish review · `U` undo · `H` archive) |
@@ -302,8 +302,9 @@ screen show your keys. `plannotator-tui config` prints every action with its key
 | `toggle-tree` `reload` `pick-message` | `t` `r` `p` | show/hide the tree; reload; choose another reply |
 | `open-in-editor` | `o` | edit the open file in `$VISUAL` or `$EDITOR`, then reload it |
 | `quick-open` | `ctrl+p` | find a file by name in a folder review |
-| `search` | `/` | search the document text (plain substring) |
-| `search-next` `search-prev` | `n` `N` | jump to the next or previous search match |
+| `search` | `/` | search the document text forward (plain substring) |
+| `search-backward` | `?` | search the document text backward |
+| `search-next` `search-prev` | `n` `N` | jump to the next or previous match (next follows the search direction) |
 | `show-orphans` | `O` | show/hide orphaned annotations at their last-known location, marked stale |
 | `review-menu` | `m` | the Review menu |
 | `resend-all` `finish-review` `undo-finish` `archive` | `R` `F` `U` `H` | file and folder review actions |

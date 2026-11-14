@@ -143,7 +143,11 @@ impl App {
                 return Ok(());
             }
             Some(Action::Search) => {
-                self.begin_search();
+                self.begin_search(false);
+                return Ok(());
+            }
+            Some(Action::SearchBackward) => {
+                self.begin_search(true);
                 return Ok(());
             }
             Some(Action::ShowOrphans) => {
@@ -292,6 +296,10 @@ impl App {
             Some(Action::Back) => {
                 if self.pending.is_some() || self.selection.is_some() {
                     self.clear_selection();
+                } else if !self.search_matches.is_empty() {
+                    // After a search, Esc clears the matches and their highlighting first,
+                    // so it cancels the search rather than quitting the app.
+                    self.clear_search();
                 } else {
                     self.request_quit();
                 }
