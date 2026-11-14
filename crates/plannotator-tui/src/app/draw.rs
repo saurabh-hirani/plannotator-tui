@@ -107,7 +107,7 @@ impl App {
             Mode::FileSearch => self.draw_file_search(frame),
             Mode::Archive => self.draw_archive(frame),
             Mode::ReviewMenu => self.draw_review_menu(frame),
-            Mode::Browse | Mode::ConfirmQuit | Mode::ConfirmClearAll => {}
+            Mode::Browse | Mode::ConfirmQuit | Mode::ConfirmClearAll | Mode::Search => {}
         }
     }
 
@@ -199,6 +199,29 @@ impl App {
                     }
                 };
                 buf.set_style(Rect { x: doc.x + col as u16, y: screen_y, width: 1, height: 1 }, style);
+            }
+
+            // Search matches sit on top of annotation tints: every match gets the search
+            // background, and the one the cursor is on is brightened so `n` / `N` show
+            // where they landed.
+            if !self.search_matches.is_empty() {
+                let len = self.search_query.len();
+                let current = self.search_matches.get(self.search_at).copied();
+                for (col, cell) in row.cells.iter().enumerate().take(usize::from(doc.width)) {
+                    let Some(offset) = cell else { continue };
+                    let in_match = |&start: &usize| (start..start + len).contains(offset);
+                    if !self.search_matches.iter().any(in_match) {
+                        continue;
+                    }
+                    let is_current = current.is_some_and(|start| (start..start + len).contains(offset));
+                    let mut style = Style::new().bg(palette().search_bg);
+                    if is_current {
+                        style = style.add_modifier(Modifier::BOLD);
+                    } else {
+                        style = style.add_modifier(Modifier::DIM);
+                    }
+                    buf.set_style(Rect { x: doc.x + col as u16, y: screen_y, width: 1, height: 1 }, style);
+                }
             }
 
             if let Some(cols) = self.selection.and_then(|s| s.columns_on(row_index, row.cells.len().max(1))) {
@@ -398,6 +421,11 @@ impl App {
     }
 
     fn draw_footer(&mut self, frame: &mut Frame, mut area: Rect) {
+        if self.mode == Mode::Search {
+            let prompt = format!(" /{}", self.search.value());
+            frame.render_widget(Paragraph::new(Line::from(Span::raw(prompt).bold())), area);
+            return;
+        }
         if self.mode == Mode::ConfirmQuit {
             // The question owns the footer: the browse help would name keys that are not
             // live while it is up.
@@ -554,6 +582,9 @@ impl App {
                 marks,
                 note.is_some().then(|| key(Action::AttachImage, "image")).flatten(),
                 remove_image,
+                // Yields with the mark hint when the footer narrows, so the annotation
+                // count still fits at 80 columns.
+                with_marks.then(|| key(Action::Search, "search")).flatten(),
                 key(Action::Send, "send"),
                 approve,
                 tab,

@@ -1237,3 +1237,92 @@ fn ctrl_p_in_a_reply_review_still_picks_another_reply() {
     app.handle_event(&Event::Key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL))).expect("ctrl+p");
     assert_eq!(app.mode, Mode::Pick);
 }
+
+/// A multi-block document for exercising document search: each block holds a distinct word.
+fn searchable_app() -> App {
+    let source = DocumentSource::new(
+        "# Plan\n\nalpha block\n\nbeta block\n\ngamma block\n\nbeta again\n".to_owned(),
+        "plan.md",
+        true,
+        Provenance::Stdin,
+    );
+    let mut app = App::open(source, 60, Box::new(Discard)).expect("app opens");
+    app.data_dir = scratch_data_dir();
+    app
+}
+
+fn type_search(app: &mut App, query: &str) {
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('/')))).expect("open search");
+    assert_eq!(app.mode, Mode::Search);
+    for c in query.chars() {
+        app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char(c)))).expect("type");
+    }
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Enter))).expect("submit");
+    assert_eq!(app.mode, Mode::Browse, "the prompt closes on submit");
+}
+
+#[test]
+fn slash_search_jumps_to_the_block_holding_the_match() {
+    let mut app = searchable_app();
+    draw_sized(&mut app, 80, 20);
+    type_search(&mut app, "gamma");
+    // "gamma block" is the fourth block (index 3 after the heading, alpha, beta).
+    assert_eq!(app.selected, 3, "selection lands on the gamma block");
+    assert_eq!(app.search_matches.len(), 1);
+}
+
+#[test]
+fn search_next_and_prev_cycle_through_every_match() {
+    let mut app = searchable_app();
+    draw_sized(&mut app, 80, 20);
+    type_search(&mut app, "beta");
+    assert_eq!(app.search_matches.len(), 2, "beta appears twice");
+    let first = app.selected;
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('n')))).expect("next");
+    let second = app.selected;
+    assert_ne!(first, second, "search-next moves to the other match");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('n')))).expect("wrap");
+    assert_eq!(app.selected, first, "search-next wraps back to the first match");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('N')))).expect("prev");
+    assert_eq!(app.selected, second, "search-prev steps backwards");
+}
+
+#[test]
+fn a_query_with_no_match_leaves_the_selection_where_it_is() {
+    let mut app = searchable_app();
+    draw_sized(&mut app, 80, 20);
+    let before = app.selected;
+    type_search(&mut app, "nowhere");
+    assert_eq!(app.selected, before, "a miss does not move the cursor");
+    assert!(app.search_matches.is_empty());
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("no match")));
+}
+
+#[test]
+fn esc_closes_the_search_prompt_without_searching() {
+    let mut app = searchable_app();
+    draw_sized(&mut app, 80, 20);
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('/')))).expect("open search");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('x')))).expect("type");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Esc))).expect("esc");
+    assert_eq!(app.mode, Mode::Browse);
+    assert!(app.search_matches.is_empty(), "esc runs no search");
+}
+
+#[test]
+fn a_search_match_is_highlighted_in_the_document() {
+    use crate::theme::palette;
+    let mut app = searchable_app();
+    draw_sized(&mut app, 80, 20);
+    type_search(&mut app, "gamma");
+    // Render and find a cell whose background is the search highlight.
+    let mut terminal = Terminal::new(TestBackend::new(80, 20)).expect("terminal");
+    terminal.draw(|frame| app.draw(frame)).expect("draw");
+    let buffer = terminal.backend().buffer();
+    let highlighted = (0..buffer.area.height).any(|y| {
+        (0..buffer.area.width)
+            .filter_map(|x| buffer.cell((x, y)))
+            .any(|c| c.bg == palette().search_bg)
+    });
+    assert!(highlighted, "the gamma match paints the search background");
+}

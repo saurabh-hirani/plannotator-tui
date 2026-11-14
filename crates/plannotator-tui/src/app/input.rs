@@ -33,6 +33,10 @@ impl App {
                     self.file_search_key(*key);
                     Ok(())
                 }
+                Mode::Search => {
+                    self.search_key(*key);
+                    Ok(())
+                }
                 Mode::Archive => {
                     self.archive_key(*key);
                     Ok(())
@@ -55,6 +59,11 @@ impl App {
             // In Quick Open a paste joins the query, newlines dropped.
             Event::Paste(text) if self.mode == Mode::FileSearch => {
                 self.file_search_paste(text);
+                Ok(())
+            }
+            // In the `/` prompt a paste joins the query, newlines dropped.
+            Event::Paste(text) if self.mode == Mode::Search => {
+                self.search_paste(text);
                 Ok(())
             }
             Event::Mouse(mouse) if self.mode == Mode::Browse => self.mouse(*mouse),
@@ -131,6 +140,10 @@ impl App {
             }
             Some(Action::PickMessage) => {
                 self.reopen_picker();
+                return Ok(());
+            }
+            Some(Action::Search) => {
+                self.begin_search();
                 return Ok(());
             }
             _ => {}
@@ -311,6 +324,8 @@ impl App {
             Some(Action::ClearAll) => self.request_clear_all(),
             Some(Action::AttachImage) => self.begin_attach_image(),
             Some(Action::RemoveImage) => self.remove_image()?,
+            Some(Action::SearchNext) => self.search_step(true),
+            Some(Action::SearchPrev) => self.search_step(false),
             _ => {}
         }
         Ok(())
@@ -496,6 +511,7 @@ impl App {
                     | Mode::ConfirmClearAll
                     | Mode::Pick
                     | Mode::FileSearch
+                    | Mode::Search
                     | Mode::Archive
                     | Mode::ReviewMenu => {
                         if !body.is_empty()
