@@ -64,6 +64,8 @@ pub(crate) enum Action {
     CopySelection,
     /// Open the `/` prompt to search the document text.
     Search,
+    /// Open the `?` prompt to search the document text backward.
+    SearchBackward,
     /// Jump to the next search match.
     SearchNext,
     /// Jump to the previous search match.
@@ -81,6 +83,7 @@ use Action::{
     ReviewMenu, Right, Search, SearchNext, SearchPrev, Send, SendAndClose, ShowOrphans, ToggleHidden,
     ToggleTree, Top, UndoFinish, Up, Visual, VisualLine, WordBack, WordEnd, WordForward, Yes,
 };
+use Action::SearchBackward;
 
 /// Browsing, before the focused pane gets the key.
 pub(crate) const GLOBAL: &[Action] = &[
@@ -101,6 +104,7 @@ pub(crate) const GLOBAL: &[Action] = &[
     QuickOpen,
     PickMessage,
     Search,
+    SearchBackward,
     ShowOrphans,
 ];
 pub(crate) const TREE: &[Action] = &[Down, Up, Confirm, Right, ToggleHidden, Back];
@@ -308,6 +312,7 @@ const DEFAULTS: &[(Action, &[Key])] = &[
     (Delete, &[ch('d')]),
     (CopySelection, &[ch('y')]),
     (Search, &[ch('/')]),
+    (SearchBackward, &[ch('?')]),
     (SearchNext, &[ch('n')]),
     (SearchPrev, &[ch('N')]),
     (ShowOrphans, &[ch('O')]),
@@ -317,7 +322,7 @@ const DEFAULTS: &[(Action, &[Key])] = &[
 
 /// Actions added after configs were written: `approve` (live only in a gated review), `copy`
 /// (on a waiting selection), `word-end`, `visual-line`, and the document search keys.
-const LATE: &[Action] = &[Approve, CopySelection, WordEnd, VisualLine, Search, SearchNext, SearchPrev, ShowOrphans];
+const LATE: &[Action] = &[Approve, CopySelection, WordEnd, VisualLine, Search, SearchNext, SearchPrev, ShowOrphans, SearchBackward];
 
 /// The keys bound to each action. A `[keys]` entry replaces that action's keys and leaves the
 /// others at their defaults; an empty list unbinds the action.
@@ -473,6 +478,7 @@ impl Action {
             Self::Delete => "delete",
             Self::CopySelection => "copy",
             Self::Search => "search",
+            Self::SearchBackward => "search-backward",
             Self::SearchNext => "search-next",
             Self::SearchPrev => "search-prev",
             Self::ShowOrphans => "show-orphans",

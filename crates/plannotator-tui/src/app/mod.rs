@@ -226,6 +226,9 @@ pub(crate) struct App {
     search_matches: Vec<usize>,
     search_at: usize,
     search_query: String,
+    /// Whether the active search runs backward (`?`) rather than forward (`/`). Sets which
+    /// match Enter lands on and the direction `n` / `N` take.
+    search_backward: bool,
     /// `show-orphans`: draw orphaned annotations at their last-known location, marked stale.
     show_orphans: bool,
     /// Whether the terminal reports Shift+Enter distinctly (kitty keyboard protocol).
@@ -313,6 +316,7 @@ impl App {
             search_matches: Vec::new(),
             search_at: 0,
             search_query: String::new(),
+            search_backward: false,
             show_orphans: false,
             shift_enter: false,
             keys: Keymap::default(),

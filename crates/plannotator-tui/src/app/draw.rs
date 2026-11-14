@@ -520,7 +520,7 @@ impl App {
 
     fn draw_footer(&mut self, frame: &mut Frame, mut area: Rect) {
         if self.mode == Mode::Search {
-            let prompt = format!(" /{}", self.search.value());
+            let prompt = format!(" {}{}", self.search_sigil(), self.search.value());
             frame.render_widget(Paragraph::new(Line::from(Span::raw(prompt).bold())), area);
             return;
         }

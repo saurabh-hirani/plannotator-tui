@@ -1393,3 +1393,51 @@ fn a_shown_orphan_bubble_names_the_lost_quote() {
     assert!(screen.contains("on:"), "the bubble names what the comment pointed at");
     assert!(screen.contains("keep this line"), "the lost quote is shown: {screen:?}");
 }
+
+#[test]
+fn esc_after_a_search_clears_it_instead_of_quitting() {
+    let mut app = searchable_app();
+    draw_sized(&mut app, 80, 20);
+    type_search(&mut app, "beta");
+    assert!(!app.search_matches.is_empty(), "the search is live");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Esc))).expect("esc");
+    assert!(app.search_matches.is_empty(), "esc cleared the search");
+    assert!(!app.quit, "esc did not quit");
+    assert_ne!(app.mode, Mode::ConfirmQuit, "esc did not start a quit");
+    // A second Esc, with nothing left to cancel, quits (transient store: no unsent prompt).
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Esc))).expect("esc again");
+    assert!(app.quit, "esc with nothing to cancel quits");
+}
+
+#[test]
+fn question_mark_searches_backward() {
+    let mut app = searchable_app();
+    draw_sized(&mut app, 80, 20);
+    // Move to the last block so a backward search lands above the cursor.
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('G')))).expect("bottom");
+    let from = app.selected;
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('?')))).expect("open reverse");
+    assert_eq!(app.mode, Mode::Search);
+    for c in "beta".chars() {
+        app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char(c)))).expect("type");
+    }
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Enter))).expect("submit");
+    assert_eq!(app.search_matches.len(), 2, "beta appears twice");
+    assert!(app.selected <= from, "a backward search lands at or above the cursor");
+}
+
+#[test]
+fn under_a_backward_search_next_goes_up() {
+    let mut app = searchable_app();
+    draw_sized(&mut app, 80, 20);
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('G')))).expect("bottom");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('?')))).expect("open reverse");
+    for c in "beta".chars() {
+        app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char(c)))).expect("type");
+    }
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Enter))).expect("submit");
+    let first = app.selected;
+    // n follows the search direction (up), so it moves to the earlier match.
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('n')))).expect("next");
+    assert!(app.selected <= first, "n under ? moves up");
+}

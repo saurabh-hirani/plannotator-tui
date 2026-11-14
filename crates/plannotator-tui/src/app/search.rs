@@ -1,10 +1,11 @@
-//! `/` search over the open document's text.
+//! `/` and `?` search over the open document's text.
 //!
 //! A plain case-sensitive substring search of `open.doc.source`. The prompt collects a
-//! query on the footer line; Enter finds every occurrence and jumps to the first at or
-//! after the current cursor, then `search-next` / `search-prev` cycle through them. The
-//! matches are byte offsets into the source, so a jump reuses the same block-and-row
-//! mapping annotations use.
+//! query on the footer line; `/` searches forward and `?` backward. Enter finds every
+//! occurrence and jumps to the first in the search direction from the cursor, then
+//! `search-next` / `search-prev` cycle through them (next follows the search direction,
+//! prev reverses it, as in `less`). The matches are byte offsets into the source, so a jump
+//! reuses the same block-and-row mapping annotations use.
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -12,13 +13,26 @@ use super::compose::{Compose, ComposeAction};
 use super::{App, Mode};
 
 impl App {
-    /// Open the `/` prompt. The query starts from the last one, so `search-next` after a
-    /// cancel still has something to repeat; the text is selected-for-replace by being
-    /// re-typed over.
-    pub(super) fn begin_search(&mut self) {
+    /// Open the search prompt. `backward` chooses `?` (up) over `/` (down); the sigil the
+    /// footer draws and which match Enter lands on both follow it.
+    pub(super) fn begin_search(&mut self, backward: bool) {
         self.search = Compose::default();
+        self.search_backward = backward;
         self.status = None;
         self.mode = Mode::Search;
+    }
+
+    /// Clear the active search: its matches and highlighting go, the cursor stays. Esc in
+    /// the document calls this before it would quit, so a search cancels cleanly.
+    pub(super) fn clear_search(&mut self) {
+        self.search_matches.clear();
+        self.search_at = 0;
+        self.status = Some("search cleared".into());
+    }
+
+    /// The sigil the prompt shows: `/` forward, `?` backward.
+    pub(super) fn search_sigil(&self) -> char {
+        if self.search_backward { '?' } else { '/' }
     }
 
     /// Keys in the search prompt: Enter searches and jumps, Esc cancels, the rest edit the
@@ -55,10 +69,15 @@ impl App {
             self.status = Some(format!("no match for {query:?}"));
             return;
         }
-        // The first match at or after the current cursor's byte, so Enter moves forward
-        // from where the reader is rather than jumping back to the top.
+        // The first match in the search direction from the cursor, so Enter moves from
+        // where the reader is: forward lands on the first at or after the cursor, backward
+        // on the last at or before it. Each wraps when there is none that way.
         let from = self.cursor_byte();
-        let at = matches.iter().position(|&off| off >= from).unwrap_or(0);
+        let at = if self.search_backward {
+            matches.iter().rposition(|&off| off <= from).unwrap_or(matches.len() - 1)
+        } else {
+            matches.iter().position(|&off| off >= from).unwrap_or(0)
+        };
         self.search_query = query;
         self.search_matches = matches;
         self.search_at = at;
@@ -66,16 +85,19 @@ impl App {
     }
 
     /// `search-next` / `search-prev`: step through the matches of the last query, wrapping
-    /// at the ends. With no live query it re-opens the prompt so `n` is still useful.
-    pub(super) fn search_step(&mut self, forward: bool) {
+    /// at the ends. `next` follows the search direction and `prev` reverses it, so under a
+    /// `?` search `n` goes up and `N` goes down, as in `less`. With no live query it
+    /// re-opens the prompt so `n` is still useful.
+    pub(super) fn search_step(&mut self, next: bool) {
         if self.search_matches.is_empty() {
             if self.search_query.is_empty() {
-                self.begin_search();
+                self.begin_search(false);
             } else {
                 self.status = Some(format!("no match for {:?}", self.search_query));
             }
             return;
         }
+        let forward = next != self.search_backward;
         let len = self.search_matches.len();
         self.search_at = if forward {
             (self.search_at + 1) % len

@@ -21,7 +21,7 @@ cargo build --release
 | file/folder review | `E` send new · `m` review menu (`R` resend all · `F` finish review · `U` undo · `H` archive) |
 | tree | `j`/`k` move · `Enter` open · `.` show/hide hidden (dot-prefixed) entries · `E` send new feedback across files, including collapsed folders · counts show active notes per file |
 | quick open (folder) | `Ctrl+P` find a Markdown file by name anywhere in the folder · type to filter · ↑/↓ or wheel select · `Enter` or click open · `Esc` cancel |
-| search (document) | `/` search the document text (plain substring) · type then `Enter` to jump to the first match · `n` / `N` next / previous · `Esc` cancels the prompt |
+| search (document) | `/` search forward, `?` search backward (plain substring) · type then `Enter` to jump to the first match in that direction · `n` / `N` next / previous (next follows the search direction) · `Esc` cancels the prompt; in the document `Esc` clears an active search before it quits |
 | orphans | `O` show or hide orphaned annotations (their anchored text is gone) at their last-known location, drawn dim and marked stale · off by default · the status line reports how many there are |
 | archive | `j`/`k` or ↑/↓ select · `Enter` or click restore · `Esc` close |
 
