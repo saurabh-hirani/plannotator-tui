@@ -99,7 +99,7 @@ fn pane(args: &[String]) -> Result<()> {
     let result = match args.first().map(String::as_str) {
         Some("last") => last_command(args.get(1..).unwrap_or_default()),
         Some("open") => match args.get(1..).unwrap_or_default() {
-            [path] => interactive(&PathBuf::from(path)),
+            [path] => interactive(&PathBuf::from(path), crate::app::ViewMode::Normal),
             [path, gate] if gate == "--gate" => gated_pane(&PathBuf::from(path), None),
             [path, gate, flag, file] if gate == "--gate" && flag == "--result-file" => {
                 gated_pane(&PathBuf::from(path), Some(std::path::Path::new(file)))

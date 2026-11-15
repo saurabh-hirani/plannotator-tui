@@ -25,7 +25,14 @@ pub(super) enum SendState {
 impl App {
     pub(super) fn send_feedback(&mut self) -> Result<()> {
         let scope = if self.is_file_review() { SendScope::Pending } else { SendScope::All };
-        self.send_feedback_scope(scope)
+        self.send_feedback_scope(scope)?;
+        // Under --checkpoint, every `E` snapshots on demand, whatever the send did: `E` is
+        // the "I'm ready" signal, not a function of unsent feedback. A send that was
+        // blocked or had nothing to deliver still checkpoints the current state.
+        if self.checkpoint {
+            self.write_checkpoint();
+        }
+        Ok(())
     }
 
     pub(super) fn resend_all(&mut self) -> Result<()> {
@@ -276,4 +283,49 @@ impl App {
         self.update_open_review_counts();
         self.derive_send_state();
     }
+
+    /// Snapshot the open file and its annotations under `--checkpoint`. A no-op for
+    /// anything but a file on disk (a reply review or stdin has no path to snapshot). The
+    /// outcome is appended to the status so one `E` reports both the send and the
+    /// checkpoint; a write failure is reported, not fatal.
+    pub(super) fn write_checkpoint(&mut self) {
+        let Provenance::File { path } = &self.open.source.provenance else {
+            return;
+        };
+        let path = path.clone();
+        let source = &self.open.doc.source;
+        let entries: Vec<crate::checkpoint::Entry> = self
+            .open
+            .store
+            .placed()
+            .iter()
+            .map(|p| crate::checkpoint::Entry {
+                id: p.annotation.id.clone(),
+                kind: kind_name(p.kind()),
+                body: p.annotation.body.clone(),
+                quote: source.get(p.range.clone()).unwrap_or_default().to_owned(),
+                range: p.range.clone(),
+            })
+            .collect();
+        let note = match crate::checkpoint::write(&path, source, &entries) {
+            Ok(crate::checkpoint::Written::New(version)) => {
+                format!(" · checkpoint v{version} ({} note(s))", entries.len())
+            }
+            Ok(crate::checkpoint::Written::Unchanged(version)) => {
+                format!(" · checkpoint unchanged (still v{version})")
+            }
+            Err(err) => format!(" · checkpoint failed: {err:#}"),
+        };
+        self.status = Some(format!("{}{note}", self.status.take().unwrap_or_default()));
+    }
+}
+
+/// The checkpoint meta's kind string, matching the `[keys]`/schema spelling.
+fn kind_name(kind: plannotator_tui_schema::Kind) -> String {
+    match kind {
+        plannotator_tui_schema::Kind::Comment => "comment",
+        plannotator_tui_schema::Kind::LooksGood => "looks_good",
+        plannotator_tui_schema::Kind::Delete => "delete",
+    }
+    .to_owned()
 }

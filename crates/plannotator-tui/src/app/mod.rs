@@ -55,6 +55,18 @@ const TOOLBAR: [(&str, &str, Action, Kind); 3] = [
     ("✗", "delete", Action::Delete, Kind::Delete),
 ];
 
+/// How an interactive single-file open behaves, set by the view flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ViewMode {
+    /// Ordinary review.
+    #[default]
+    Normal,
+    /// `--checkpoint`: each `E` also writes a numbered snapshot.
+    Checkpoint,
+    /// `--diff`: a read-only before/after of the two newest snapshots.
+    Diff,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum Mode {
     Browse,
@@ -251,6 +263,8 @@ pub(crate) struct App {
     frame_max_ms: f64,
     /// Copy selections to the terminal clipboard (off for headless runs).
     pub(crate) clipboard: bool,
+    /// `--checkpoint`: each successful `E` also writes a numbered snapshot beside the file.
+    pub(crate) checkpoint: bool,
     pub(crate) quit: bool,
 }
 
@@ -264,6 +278,12 @@ impl std::fmt::Debug for App {
 }
 
 impl App {
+    /// `--diff`: a read-only before/after of the two newest snapshots. Not implemented yet;
+    /// returns a clear error so the flag fails cleanly while checkpointing is validated.
+    pub(crate) fn open_diff(_path: &Path, _width: usize) -> Result<Self> {
+        anyhow::bail!("--diff is not implemented yet")
+    }
+
     pub(crate) fn open(source: DocumentSource, width: usize, delivery: Box<dyn Delivery>) -> Result<Self> {
         let data_dir = workspace_paths::data_dir();
         let folder = match &source.provenance {
@@ -330,6 +350,7 @@ impl App {
             frame_ms: 0.0,
             frame_max_ms: 0.0,
             clipboard: false,
+            checkpoint: false,
             quit: false,
         })
     }
