@@ -74,6 +74,8 @@ pub(crate) enum Action {
     ShowOrphans,
     /// Toggle the `--diff` view layout (stacked ↔ unified).
     DiffLayout,
+    /// Toggle between the checkpoint (live) view and the diff view.
+    ToggleDiffView,
     Yes,
     No,
 }
@@ -87,6 +89,7 @@ use Action::{
 };
 use Action::SearchBackward;
 use Action::DiffLayout;
+use Action::ToggleDiffView;
 
 /// Browsing, before the focused pane gets the key.
 pub(crate) const GLOBAL: &[Action] = &[
@@ -110,6 +113,7 @@ pub(crate) const GLOBAL: &[Action] = &[
     SearchBackward,
     ShowOrphans,
     DiffLayout,
+    ToggleDiffView,
 ];
 pub(crate) const TREE: &[Action] = &[Down, Up, Confirm, Right, ToggleHidden, Back];
 pub(crate) const RAIL: &[Action] = &[Down, Up, Confirm, Edit, Remove, AttachImage, RemoveImage, Back];
@@ -321,13 +325,14 @@ const DEFAULTS: &[(Action, &[Key])] = &[
     (SearchPrev, &[ch('N')]),
     (ShowOrphans, &[ch('O')]),
     (DiffLayout, &[ch('L')]),
+    (ToggleDiffView, &[ch('T')]),
     (Yes, &[ch('y'), ch('Y')]),
     (No, &[ch('n'), ch('N')]),
 ];
 
 /// Actions added after configs were written: `approve` (live only in a gated review), `copy`
 /// (on a waiting selection), `word-end`, `visual-line`, and the document search keys.
-const LATE: &[Action] = &[Approve, CopySelection, WordEnd, VisualLine, Search, SearchNext, SearchPrev, ShowOrphans, SearchBackward, DiffLayout];
+const LATE: &[Action] = &[Approve, CopySelection, WordEnd, VisualLine, Search, SearchNext, SearchPrev, ShowOrphans, SearchBackward, DiffLayout, ToggleDiffView];
 
 /// The keys bound to each action. A `[keys]` entry replaces that action's keys and leaves the
 /// others at their defaults; an empty list unbinds the action.
@@ -488,6 +493,7 @@ impl Action {
             Self::SearchPrev => "search-prev",
             Self::ShowOrphans => "show-orphans",
             Self::DiffLayout => "diff-layout",
+            Self::ToggleDiffView => "toggle-diff-view",
             Self::Yes => "yes",
             Self::No => "no",
         }

@@ -1518,3 +1518,64 @@ fn diff_view_reloads_to_the_latest_checkpoints() {
 
     std::fs::remove_dir_all(&root).expect("cleanup");
 }
+
+/// z toggles between the live checkpoint view and the diff view and back.
+#[test]
+fn toggle_key_switches_between_checkpoint_and_diff_views() {
+    use crate::checkpoint;
+    let root = std::env::temp_dir().join(format!("plannotator-toggle-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("root");
+    let doc = root.join("story.md");
+    std::fs::write(&doc, "# T\n\nbeta\n").expect("file");
+    checkpoint::write(&doc, "# T\n\nalpha\n", &[]).expect("v1");
+    checkpoint::write(&doc, "# T\n\nbeta\n", &[]).expect("v2");
+
+    // Open the live checkpoint view.
+    let source = super::read_file(&doc).expect("read");
+    let mut app = App::open(source, 80, Box::new(Discard)).expect("app");
+    app.data_dir = scratch_data_dir();
+    app.checkpoint = true;
+    app.checkpoint_path = Some(doc.clone());
+    draw_sized(&mut app, 100, 30);
+    assert!(!app.read_only, "live view is editable");
+
+    // z enters the diff view.
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('T')))).expect("to diff");
+    assert!(app.read_only, "diff view is read-only");
+    assert!(app.open.doc.source.contains("v1 \u{2192} v2"), "{}", app.open.doc.source);
+
+    // z returns to the live view.
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('T')))).expect("to live");
+    assert!(!app.read_only, "back to editable live view");
+    assert!(app.open.doc.source.contains("beta"), "the live file is restored: {}", app.open.doc.source);
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("checkpoint view")), "{:?}", app.status);
+
+    std::fs::remove_dir_all(&root).expect("cleanup");
+}
+
+/// Toggling to diff with fewer than two checkpoints leaves the live view untouched.
+#[test]
+fn toggle_with_one_checkpoint_keeps_the_live_view() {
+    use crate::checkpoint;
+    let root = std::env::temp_dir().join(format!("plannotator-toggle-one-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("root");
+    let doc = root.join("story.md");
+    std::fs::write(&doc, "# T\n\nbeta\n").expect("file");
+    checkpoint::write(&doc, "# T\n\nbeta\n", &[]).expect("only v1");
+
+    let source = super::read_file(&doc).expect("read");
+    let mut app = App::open(source, 80, Box::new(Discard)).expect("app");
+    app.data_dir = scratch_data_dir();
+    app.checkpoint = true;
+    app.checkpoint_path = Some(doc.clone());
+    draw_sized(&mut app, 100, 30);
+
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('T')))).expect("T");
+    assert!(!app.read_only, "still the live view");
+    assert!(app.diff.is_none(), "no diff was entered");
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("cannot diff")), "{:?}", app.status);
+
+    std::fs::remove_dir_all(&root).expect("cleanup");
+}

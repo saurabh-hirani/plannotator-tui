@@ -106,8 +106,8 @@ dimmed. The keys also work without opening the menu.
 | folder review | `Ctrl+P` open a file by name, including in collapsed folders: type, `↑`/`↓` or click, `Enter`, `Esc` |
 | tree | `j`/`k`; `Enter` open; `.` show/hide dot-prefixed entries (`.agents/`, `.github/`); `E` sends new notes across all reviewed files, including collapsed folders |
 | orphans | `O` show/hide orphaned annotations at their last-known location, dim and marked stale |
-| checkpoint (`--checkpoint`) | each `E` snapshots the file into `.plannotator-checkpoint/` (a copy plus a `.meta` of the comments), on demand, deduped |
-| diff (`--diff`) | read-only before/after of the two newest checkpoints over the whole document; `L` stacked/unified, `c` show/hide comments, `r` reload |
+| checkpoint (`--checkpoint`) | each `E` snapshots the file into `.plannotator-checkpoint/` (a copy plus a `.meta` of the comments), on demand, deduped; `T` toggles to the diff view |
+| diff (`--diff`) | read-only before/after of the two newest checkpoints over the whole document; `L` stacked/unified, `c` show/hide comments, `r` reload, `T` toggle to the live view |
 
 These are the defaults; every key can be rebound under `[keys]` (see [Keys](#keys)).
 
@@ -310,6 +310,7 @@ screen show your keys. `plannotator-tui config` prints every action with its key
 | `search-next` `search-prev` | `n` `N` | jump to the next or previous match (next follows the search direction) |
 | `show-orphans` | `O` | show/hide orphaned annotations at their last-known location, marked stale |
 | `diff-layout` | `L` | toggle the `--diff` view layout (stacked ↔ unified) |
+| `toggle-diff-view` | `T` | toggle between the checkpoint (live) view and the diff view |
 | `review-menu` | `m` | the Review menu |
 | `resend-all` `finish-review` `undo-finish` `archive` | `R` `F` `U` `H` | file and folder review actions |
 | `toggle-hidden` | `.` | show/hide dot-prefixed entries in the tree |

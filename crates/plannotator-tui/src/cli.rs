@@ -493,13 +493,20 @@ pub(crate) fn interactive(path: &PathBuf, mode: crate::app::ViewMode) -> Result<
     use crate::app::ViewMode;
     if mode == ViewMode::Diff {
         anyhow::ensure!(!path.is_dir(), "--diff is for a single file, not a folder");
-        return run_ui(|width| App::open_diff(path, width));
+        let path = path.clone();
+        return run_ui(move |width| {
+            let mut app = App::open_diff(&path, width)?;
+            // Enable the in-app toggle back to the live checkpoint view.
+            app.checkpoint_path = Some(path.clone());
+            Ok(app)
+        });
     }
     run_ui(move |width| {
         let mut app = open_app(path, width, true)?;
         if mode == ViewMode::Checkpoint {
             anyhow::ensure!(!path.is_dir(), "--checkpoint is for a single file, not a folder");
             app.checkpoint = true;
+            app.checkpoint_path = Some(path.clone());
         }
         Ok(app)
     })

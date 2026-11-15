@@ -158,6 +158,7 @@ impl App {
                 self.toggle_diff_layout();
                 return Ok(());
             }
+            Some(Action::ToggleDiffView) => return self.toggle_diff_view(),
             _ => {}
         }
         match self.focus {
