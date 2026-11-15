@@ -163,6 +163,15 @@ impl Open {
         };
         Ok(Self { source, doc, layout, store, disk, disk_noticed: None })
     }
+
+    /// An empty transient `Open`, used as a temporary while swapping the live and diff
+    /// views with `std::mem::replace`.
+    fn placeholder() -> Self {
+        let source = DocumentSource::new(String::new(), "", true, Provenance::Stdin);
+        let doc = Document::parse(String::new());
+        let layout = DocLayout::build(&doc, 1);
+        Self { source, doc, layout, store: Store::transient(), disk: None, disk_noticed: None }
+    }
 }
 
 use self::compose::Compose;
@@ -279,6 +288,12 @@ pub(crate) struct App {
     diff_added: Vec<Range<usize>>,
     /// `--diff`: whether comments are hidden (highlight + rail bubbles). Toggled with `c`.
     diff_comments_hidden: bool,
+    /// The file `--checkpoint` opened, enabling the in-app toggle to the diff view. Set
+    /// only for a checkpoint launch (a single real file).
+    pub(crate) checkpoint_path: Option<PathBuf>,
+    /// The live checkpoint view's `Open`, stashed while the diff view is up so the toggle
+    /// can restore it without re-reading.
+    saved_live: Option<Box<Open>>,
     pub(crate) quit: bool,
 }
 
@@ -327,6 +342,78 @@ impl App {
             "reloaded diff v{} \u{2192} v{} \u{b7} {changes} change(s)",
             versions.0, versions.1
         ));
+        Ok(())
+    }
+
+    /// Toggle between the checkpoint (live) view and the diff view, in place. Only works
+    /// when a checkpoint file is known (a `--checkpoint` or `--diff` launch on a file).
+    pub(super) fn toggle_diff_view(&mut self) -> Result<()> {
+        let Some(path) = self.checkpoint_path.clone() else {
+            self.status = Some("no checkpoint file to diff".into());
+            return Ok(());
+        };
+        if self.diff.is_some() {
+            self.exit_diff()
+        } else {
+            self.enter_diff(&path);
+            Ok(())
+        }
+    }
+
+    /// Enter the diff view from the live view: stash the live `Open`, build the diff and
+    /// render it read-only. A build error (e.g. fewer than two checkpoints) leaves the
+    /// live view untouched and reports why.
+    fn enter_diff(&mut self, path: &Path) {
+        let diff = match crate::diff::build(path) {
+            Ok(diff) => diff,
+            Err(err) => {
+                self.status = Some(format!("cannot diff: {err:#}"));
+                return;
+            }
+        };
+        // Stash the live view so the toggle can restore it without re-reading. Capture the
+        // width first (the placeholder's layout is width 1).
+        let width = usize::from(self.geometry.doc.width).max(self.open.layout.width).max(1);
+        let live = std::mem::replace(&mut self.open, Open::placeholder());
+        self.saved_live = Some(Box::new(live));
+        self.diff = Some(diff);
+        self.diff_path = Some(path.to_path_buf());
+        self.diff_layout = crate::diff::Layout::default();
+        self.diff_comments_hidden = false;
+        self.read_only = true;
+        self.clear_selection();
+        self.render_diff_layout(self.diff_layout, width);
+    }
+
+    /// Return to the live checkpoint view from the diff view: restore the stashed `Open`
+    /// (or open the real file when none was stashed, i.e. a `--diff` launch), clear the
+    /// diff state, and resume read-write annotating with checkpointing on.
+    fn exit_diff(&mut self) -> Result<()> {
+        let width = usize::from(self.geometry.doc.width).max(self.open.layout.width).max(1);
+        if let Some(live) = self.saved_live.take() {
+            self.open = *live;
+        } else {
+            // A --diff launch has no stashed live view: open the real file now.
+            let Some(path) = self.checkpoint_path.clone() else {
+                self.status = Some("no checkpoint file to open".into());
+                return Ok(());
+            };
+            let source = read_file(&path)?;
+            self.open = Open::new(source, width, &self.data_dir, &self.project)?;
+            // Toggling into the live view enables checkpointing, so E snapshots.
+            self.checkpoint = true;
+        }
+        self.diff = None;
+        self.diff_path = None;
+        self.diff_removed.clear();
+        self.diff_added.clear();
+        self.read_only = false;
+        self.scroll = 0;
+        self.selected = 0;
+        self.cursor = (0, 0);
+        self.clear_selection();
+        self.derive_send_state();
+        self.status = Some("checkpoint view".into());
         Ok(())
     }
 
@@ -478,6 +565,8 @@ impl App {
             diff_removed: Vec::new(),
             diff_added: Vec::new(),
             diff_comments_hidden: false,
+            checkpoint_path: None,
+            saved_live: None,
             quit: false,
         })
     }
