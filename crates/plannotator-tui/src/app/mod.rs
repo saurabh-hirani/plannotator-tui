@@ -294,6 +294,11 @@ pub(crate) struct App {
     /// The live checkpoint view's `Open`, stashed while the diff view is up so the toggle
     /// can restore it without re-reading.
     saved_live: Option<Box<Open>>,
+    /// Each view's last `(scroll, selected, cursor)`, so toggling back restores where the
+    /// reader was in that view. The two views are different documents, so positions are
+    /// kept per view rather than mapped across.
+    saved_live_pos: Option<(usize, usize, (usize, usize))>,
+    saved_diff_pos: Option<(usize, usize, (usize, usize))>,
     pub(crate) quit: bool,
 }
 
@@ -372,8 +377,10 @@ impl App {
             }
         };
         // Stash the live view so the toggle can restore it without re-reading. Capture the
-        // width first (the placeholder's layout is width 1).
+        // width first (the placeholder's layout is width 1), and remember where the reader
+        // was so returning lands there.
         let width = usize::from(self.geometry.doc.width).max(self.open.layout.width).max(1);
+        self.saved_live_pos = Some((self.scroll, self.selected, self.cursor));
         let live = std::mem::replace(&mut self.open, Open::placeholder());
         self.saved_live = Some(Box::new(live));
         self.diff = Some(diff);
@@ -383,6 +390,9 @@ impl App {
         self.read_only = true;
         self.clear_selection();
         self.render_diff_layout(self.diff_layout, width);
+        // Restore the diff view's own last position, if it was visited before.
+        let pos = self.saved_diff_pos.take();
+        self.restore_view_pos(pos);
     }
 
     /// Return to the live checkpoint view from the diff view: restore the stashed `Open`
@@ -390,6 +400,8 @@ impl App {
     /// diff state, and resume read-write annotating with checkpointing on.
     fn exit_diff(&mut self) -> Result<()> {
         let width = usize::from(self.geometry.doc.width).max(self.open.layout.width).max(1);
+        // Remember where the reader was in the diff view, so toggling back lands there.
+        self.saved_diff_pos = Some((self.scroll, self.selected, self.cursor));
         if let Some(live) = self.saved_live.take() {
             self.open = *live;
         } else {
@@ -408,13 +420,29 @@ impl App {
         self.diff_removed.clear();
         self.diff_added.clear();
         self.read_only = false;
-        self.scroll = 0;
-        self.selected = 0;
-        self.cursor = (0, 0);
         self.clear_selection();
         self.derive_send_state();
+        // Restore the live view's own last position; a first visit starts at the top.
+        let pos = self.saved_live_pos.take();
+        self.restore_view_pos(pos);
         self.status = Some("checkpoint view".into());
         Ok(())
+    }
+
+    /// Restore a saved `(scroll, selected, cursor)` for the view just entered, clamped to
+    /// the current document. `None` (a first visit) starts at the top.
+    fn restore_view_pos(&mut self, pos: Option<(usize, usize, (usize, usize))>) {
+        let blocks = self.open.doc.blocks.len();
+        let rows = self.open.layout.total_rows;
+        if let Some((scroll, selected, cursor)) = pos {
+            self.selected = selected.min(blocks.saturating_sub(1));
+            self.scroll = scroll.min(rows.saturating_sub(1));
+            self.cursor = (cursor.0.min(rows.saturating_sub(1)), cursor.1);
+        } else {
+            self.scroll = 0;
+            self.selected = 0;
+            self.cursor = (0, 0);
+        }
     }
 
     /// Re-render the kept diff in `layout`, swapping the open document and its comments and
@@ -567,6 +595,8 @@ impl App {
             diff_comments_hidden: false,
             checkpoint_path: None,
             saved_live: None,
+            saved_live_pos: None,
+            saved_diff_pos: None,
             quit: false,
         })
     }

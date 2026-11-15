@@ -1579,3 +1579,79 @@ fn toggle_with_one_checkpoint_keeps_the_live_view() {
 
     std::fs::remove_dir_all(&root).expect("cleanup");
 }
+
+/// Toggling out of a view and back restores that view's own cursor/scroll position.
+#[test]
+fn toggling_restores_each_views_cursor_position() {
+    use crate::checkpoint;
+    let root = std::env::temp_dir().join(format!("plannotator-toggle-pos-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("root");
+    let doc = root.join("story.md");
+    // A multi-block file so the cursor can move off block 0.
+    let body = "# T\n\nalpha\n\nbeta\n\ngamma\n\ndelta\n\nepsilon\n";
+    std::fs::write(&doc, body).expect("file");
+    checkpoint::write(&doc, "# T\n\nalpha\n\nOLD\n\ngamma\n\ndelta\n\nepsilon\n", &[]).expect("v1");
+    checkpoint::write(&doc, body, &[]).expect("v2");
+
+    let source = super::read_file(&doc).expect("read");
+    let mut app = App::open(source, 80, Box::new(Discard)).expect("app");
+    app.data_dir = scratch_data_dir();
+    app.checkpoint = true;
+    app.checkpoint_path = Some(doc.clone());
+    draw_sized(&mut app, 100, 30);
+
+    // Move the cursor down a few blocks in the live view.
+    for _ in 0..3 {
+        app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('j')))).expect("j");
+    }
+    let live_selected = app.selected;
+    assert!(live_selected >= 3, "moved down in the live view");
+
+    // Into the diff view, move somewhere, then back.
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('T')))).expect("to diff");
+    draw_sized(&mut app, 100, 30);
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('j')))).expect("j in diff");
+    let diff_selected = app.selected;
+
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('T')))).expect("back to live");
+    assert_eq!(app.selected, live_selected, "the live view's position is restored");
+
+    // Back into the diff: its own position is restored too.
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('T')))).expect("to diff again");
+    assert_eq!(app.selected, diff_selected, "the diff view's position is restored");
+
+    std::fs::remove_dir_all(&root).expect("cleanup");
+}
+
+/// In the read-only diff view, `v`/`y` selects and copies text, but `c`/`a`/`d` do not annotate.
+#[test]
+fn diff_view_allows_select_and_copy_but_not_annotate() {
+    use crate::checkpoint;
+    let root = std::env::temp_dir().join(format!("plannotator-diff-copy-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("root");
+    let doc = root.join("story.md");
+    checkpoint::write(&doc, "# T\n\nalpha\n", &[]).expect("v1");
+    checkpoint::write(&doc, "# T\n\nbeta\n", &[]).expect("v2");
+
+    let mut app = App::open_diff(&doc, 80).expect("diff opens");
+    app.data_dir = scratch_data_dir();
+    app.clipboard = true;
+    draw_sized(&mut app, 100, 30);
+
+    // Select a whole row and copy it.
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('V')))).expect("visual-line");
+    assert!(app.selection.is_some(), "selection started in the diff view");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('y')))).expect("copy");
+    assert_eq!(app.status.as_deref(), Some("copied"));
+
+    // Annotate keys do nothing (still read-only, no store growth).
+    let before = app.open.store.len();
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('V')))).expect("visual-line");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('a')))).expect("a");
+    assert_eq!(app.open.store.len(), before, "looks-good does not annotate in read-only");
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("read-only")), "{:?}", app.status);
+
+    std::fs::remove_dir_all(&root).expect("cleanup");
+}
