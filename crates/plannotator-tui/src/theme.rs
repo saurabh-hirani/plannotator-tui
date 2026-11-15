@@ -118,6 +118,11 @@ pub(crate) struct Palette {
     pub(crate) search_bg: Color,
     /// Background behind an orphaned annotation shown at its last-known location.
     pub(crate) orphan_bg: Color,
+    /// Background behind a commented span in the read-only `--diff` view.
+    pub(crate) diff_comment_bg: Color,
+    /// Backgrounds behind removed and added words in the `--diff` view.
+    pub(crate) diff_removed_bg: Color,
+    pub(crate) diff_added_bg: Color,
     /// The keyboard cursor cell.
     pub(crate) cursor: Style,
     /// A character selection, a picker row, a review-menu row.
@@ -139,6 +144,9 @@ pub(crate) static DARK: Palette = Palette {
     approve_bg: Color::Indexed(22),
     search_bg: Color::Indexed(94),
     orphan_bg: Color::Indexed(53),
+    diff_comment_bg: Color::Indexed(24),
+    diff_removed_bg: Color::Indexed(52),
+    diff_added_bg: Color::Indexed(22),
     cursor: Style::new().bg(Color::Indexed(240)),
     selection: Style::new().add_modifier(Modifier::REVERSED),
 };
@@ -161,6 +169,9 @@ pub(crate) static LIGHT: Palette = Palette {
     approve_bg: Color::Indexed(157),
     search_bg: Color::Indexed(229),
     orphan_bg: Color::Indexed(225),
+    diff_comment_bg: Color::Indexed(117),
+    diff_removed_bg: Color::Indexed(224),
+    diff_added_bg: Color::Indexed(194),
     // A dark cell with its own light foreground, so the glyph under the cursor stays legible.
     cursor: Style::new().bg(Color::Indexed(238)).fg(Color::White),
     selection: Style::new().bg(Color::Indexed(153)),
@@ -464,6 +475,9 @@ mod tests {
         assert_ne!(LIGHT.approve_bg, DARK.approve_bg);
         assert_ne!(LIGHT.search_bg, DARK.search_bg);
         assert_ne!(LIGHT.orphan_bg, DARK.orphan_bg);
+        assert_ne!(LIGHT.diff_comment_bg, DARK.diff_comment_bg);
+        assert_ne!(LIGHT.diff_removed_bg, DARK.diff_removed_bg);
+        assert_ne!(LIGHT.diff_added_bg, DARK.diff_added_bg);
         assert_ne!(LIGHT.cursor, DARK.cursor);
         assert_ne!(LIGHT.selection, DARK.selection);
     }

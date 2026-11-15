@@ -1441,3 +1441,80 @@ fn under_a_backward_search_next_goes_up() {
     app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('n')))).expect("next");
     assert!(app.selected <= first, "n under ? moves up");
 }
+
+/// The --diff view toggles layout with L and highlights changed words.
+#[test]
+fn diff_view_toggles_layout() {
+    use crate::checkpoint;
+    // Two checkpoints with a comment on the changed block.
+    let root = std::env::temp_dir().join(format!("plannotator-diff-app-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("root");
+    let doc = root.join("story.md");
+    let v1 = "# T\n\none two three\n";
+    let start = v1.find("one two three").expect("present");
+    let entries = vec![checkpoint::Entry {
+        id: "c".into(),
+        kind: "comment".into(),
+        body: "expand this".into(),
+        quote: "one two three".into(),
+        range: start..start + "one two three".len(),
+    }];
+    checkpoint::write(&doc, v1, &entries).expect("v1");
+    checkpoint::write(&doc, "# T\n\none TWO three four\n", &[]).expect("v2");
+
+    let mut app = App::open_diff(&doc, 80).expect("diff opens");
+    assert!(app.read_only, "the diff view is read-only");
+    assert_eq!(app.diff_layout, crate::diff::Layout::Stacked);
+    // The before-comment is anchored (on its quote span) and rendered like a live note.
+    assert_eq!(app.open.store.len(), 1, "the before comment is shown");
+
+    // Stacked shows [before]/[after].
+    let stacked = draw_sized(&mut app, 100, 30).join("\n");
+    assert!(stacked.contains("before"), "{stacked}");
+
+    // L toggles to unified: minus/plus lines appear.
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('L')))).expect("toggle");
+    assert_eq!(app.diff_layout, crate::diff::Layout::Unified);
+    let unified = app.open.doc.source.clone();
+    assert!(unified.contains("- one two three"), "{unified}");
+    assert!(unified.contains("+ one TWO three four"), "{unified}");
+    assert_eq!(app.open.store.len(), 1, "the comment survives the layout toggle");
+
+    // A mutating key (looks-good) does nothing in read-only.
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('a')))).expect("a");
+    assert_eq!(app.mode, Mode::Browse);
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("read-only")), "{:?}", app.status);
+
+    // `c` toggles the comments off (and back on).
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('c')))).expect("hide comments");
+    assert_eq!(app.open.store.len(), 0, "comments hidden");
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("comments hidden")), "{:?}", app.status);
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('c')))).expect("show comments");
+    assert_eq!(app.open.store.len(), 1, "comments shown again");
+
+    std::fs::remove_dir_all(&root).expect("cleanup");
+}
+
+/// Reloading the --diff view picks up a newer checkpoint and re-diffs the latest two.
+#[test]
+fn diff_view_reloads_to_the_latest_checkpoints() {
+    use crate::checkpoint;
+    let root = std::env::temp_dir().join(format!("plannotator-diff-reload-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).expect("root");
+    let doc = root.join("story.md");
+    checkpoint::write(&doc, "# T\n\nalpha\n", &[]).expect("v1");
+    checkpoint::write(&doc, "# T\n\nbeta\n", &[]).expect("v2");
+
+    let mut app = App::open_diff(&doc, 80).expect("diff opens");
+    assert!(app.open.doc.source.contains("v1 \u{2192} v2"), "{}", app.open.doc.source);
+
+    // A newer checkpoint is made; reload should re-diff v2 -> v3.
+    checkpoint::write(&doc, "# T\n\ngamma\n", &[]).expect("v3");
+    app.handle_event(&Event::Key(KeyEvent::from(KeyCode::Char('r')))).expect("reload");
+    assert!(app.open.doc.source.contains("v2 \u{2192} v3"), "{}", app.open.doc.source);
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("reloaded diff v2")), "{:?}", app.status);
+
+    std::fs::remove_dir_all(&root).expect("cleanup");
+}

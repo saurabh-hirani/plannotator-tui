@@ -154,6 +154,10 @@ impl App {
                 self.toggle_show_orphans();
                 return Ok(());
             }
+            Some(Action::DiffLayout) => {
+                self.toggle_diff_layout();
+                return Ok(());
+            }
             _ => {}
         }
         match self.focus {
@@ -262,6 +266,32 @@ impl App {
 
     fn document_key(&mut self, key: KeyEvent) -> Result<()> {
         let page = i64::from(self.geometry.doc.height.max(1));
+        // A read-only view (the --diff document) allows navigation, search and copy, but no
+        // annotating. Reject the mutating keys with a note; everything else falls through.
+        if self.read_only {
+            // `c` toggles the diff view's comments on/off; other mutating keys are rejected.
+            if self.keys.is(Action::Comment, &key) {
+                self.toggle_diff_comments();
+                return Ok(());
+            }
+            let mutating = [
+                Action::LooksGood,
+                Action::Delete,
+                Action::ClearBlock,
+                Action::ClearAll,
+                Action::Visual,
+                Action::VisualLine,
+                Action::MoveCursor,
+                Action::AttachImage,
+                Action::RemoveImage,
+            ];
+            if mutating.iter().any(|&a| self.keys.is(a, &key))
+                || self.keys.action_without_ctrl_leak(&key, keys::BLOCK_MARKS).is_some()
+            {
+                self.status = Some("read-only diff view".into());
+                return Ok(());
+            }
+        }
         // With a selection waiting, the toolbar keys win.
         if self.pending.is_some() && self.keys.action(&key, keys::TOOLBAR) == Some(Action::CopySelection) {
             self.copy_pending();

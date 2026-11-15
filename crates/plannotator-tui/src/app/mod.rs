@@ -265,6 +265,20 @@ pub(crate) struct App {
     pub(crate) clipboard: bool,
     /// `--checkpoint`: each successful `E` also writes a numbered snapshot beside the file.
     pub(crate) checkpoint: bool,
+    /// `--diff`: the document is a synthesized read-only diff; annotating is disabled.
+    pub(crate) read_only: bool,
+    /// The structured diff and current layout, for the `--diff` view's layout toggle.
+    diff: Option<crate::diff::Diff>,
+    diff_layout: crate::diff::Layout,
+    /// The real document path behind the `--diff` view, so reload can rebuild from the
+    /// latest snapshots.
+    diff_path: Option<PathBuf>,
+    /// Word-change highlight ranges in the current diff source: removed (before) / added
+    /// (after). Comment highlights ride the normal annotation path, separate from these.
+    diff_removed: Vec<Range<usize>>,
+    diff_added: Vec<Range<usize>>,
+    /// `--diff`: whether comments are hidden (highlight + rail bubbles). Toggled with `c`.
+    diff_comments_hidden: bool,
     pub(crate) quit: bool,
 }
 
@@ -278,10 +292,116 @@ impl std::fmt::Debug for App {
 }
 
 impl App {
-    /// `--diff`: a read-only before/after of the two newest snapshots. Not implemented yet;
-    /// returns a clear error so the flag fails cleanly while checkpointing is validated.
-    pub(crate) fn open_diff(_path: &Path, _width: usize) -> Result<Self> {
-        anyhow::bail!("--diff is not implemented yet")
+    /// `--diff`: a read-only before/after of the two newest snapshots. Builds the
+    /// structured diff, keeps it for the layout toggle, and renders the default layout.
+    pub(crate) fn open_diff(path: &Path, width: usize) -> Result<Self> {
+        let diff = crate::diff::build(path)?;
+        let layout = crate::diff::Layout::default();
+        let view = crate::diff::render(&diff, layout);
+        let name = format!("diff v{} \u{2192} v{}", diff.before_version, diff.after_version);
+        let source = DocumentSource::new(view.source.clone(), &name, true, Provenance::Stdin);
+        let mut app = Self::open(source, width, Box::new(crate::delivery::Discard))?;
+        app.read_only = true;
+        app.diff = Some(diff);
+        app.diff_layout = layout;
+        app.diff_path = Some(path.to_path_buf());
+        app.apply_diff_view(&view);
+        Ok(app)
+    }
+
+    /// Reload the `--diff` view: rebuild the structured diff from the latest two snapshots
+    /// (so a new checkpoint made meanwhile is picked up) and re-render at the current
+    /// layout. Keeps the layout the reader chose.
+    fn reload_diff(&mut self) -> Result<()> {
+        let Some(path) = self.diff_path.clone() else {
+            self.status = Some("not a diff view".into());
+            return Ok(());
+        };
+        let diff = crate::diff::build(&path)?;
+        let versions = (diff.before_version, diff.after_version);
+        let changes = diff.changed();
+        self.diff = Some(diff);
+        let width = self.open.layout.width.max(1);
+        self.render_diff_layout(self.diff_layout, width);
+        self.status = Some(format!(
+            "reloaded diff v{} \u{2192} v{} \u{b7} {changes} change(s)",
+            versions.0, versions.1
+        ));
+        Ok(())
+    }
+
+    /// Re-render the kept diff in `layout`, swapping the open document and its comments and
+    /// refreshing the word-highlight ranges. Used on open and on the layout toggle.
+    fn render_diff_layout(&mut self, layout: crate::diff::Layout, width: usize) {
+        let Some(diff) = self.diff.clone() else { return };
+        let view = crate::diff::render(&diff, layout);
+        let name = format!("diff v{} \u{2192} v{}", diff.before_version, diff.after_version);
+        let source = DocumentSource::new(view.source.clone(), &name, true, Provenance::Stdin);
+        if let Ok(open) = Open::new(source, width, &self.data_dir, &self.project) {
+            self.open = open;
+        }
+        self.diff_layout = layout;
+        self.scroll = 0;
+        self.selected = 0;
+        self.cursor = (0, 0);
+        self.apply_diff_view(&view);
+        self.status =
+            Some(format!("diff: {} layout \u{b7} {} change(s) \u{b7} read-only", layout.name(), diff.changed()));
+    }
+
+    /// `show-orphans` is free in the diff view; map the layout-toggle action here. Toggles
+    /// stacked ↔ unified and re-renders at the current width.
+    pub(super) fn toggle_diff_layout(&mut self) {
+        if self.diff.is_none() {
+            return;
+        }
+        let width = self.open.layout.width.max(1);
+        self.render_diff_layout(self.diff_layout.toggled(), width);
+    }
+
+    /// Show or hide the diff view's comments (their highlight and rail bubbles). Re-renders
+    /// at the current layout and reports the new state.
+    pub(super) fn toggle_diff_comments(&mut self) {
+        if self.diff.is_none() {
+            return;
+        }
+        self.diff_comments_hidden = !self.diff_comments_hidden;
+        let width = self.open.layout.width.max(1);
+        self.render_diff_layout(self.diff_layout, width);
+        self.status = Some(
+            if self.diff_comments_hidden { "diff: comments hidden" } else { "diff: comments shown" }
+                .to_owned(),
+        );
+    }
+
+    /// Attach a rendered diff's comments and word-highlights to the open (transient) store.
+    /// Comments are skipped when hidden by the comments toggle.
+    fn apply_diff_view(&mut self, view: &crate::diff::DiffView) {
+        if !self.diff_comments_hidden {
+            for comment in &view.comments {
+                let kind = match comment.kind.as_str() {
+                    "looks_good" => Kind::LooksGood,
+                    "delete" => Kind::Delete,
+                    _ => Kind::Comment,
+                };
+                let _ = self.open.store.add(
+                    &self.open.doc,
+                    comment.range.clone(),
+                    comment.body.clone(),
+                    kind,
+                    comment.body.clone(),
+                );
+            }
+        }
+        self.open.store.resolve_all(&self.open.doc);
+        self.diff_removed.clone_from(&view.removed);
+        self.diff_added.clone_from(&view.added);
+        if self.status.is_none() {
+            self.status = Some(format!(
+                "diff: {} layout \u{b7} read-only",
+                self.diff_layout.name()
+            ));
+        }
     }
 
     pub(crate) fn open(source: DocumentSource, width: usize, delivery: Box<dyn Delivery>) -> Result<Self> {
@@ -351,6 +471,13 @@ impl App {
             frame_max_ms: 0.0,
             clipboard: false,
             checkpoint: false,
+            read_only: false,
+            diff: None,
+            diff_layout: crate::diff::Layout::default(),
+            diff_path: None,
+            diff_removed: Vec::new(),
+            diff_added: Vec::new(),
+            diff_comments_hidden: false,
             quit: false,
         })
     }
@@ -711,6 +838,9 @@ impl App {
 
     /// Re-read the document from its provenance and re-resolve every annotation.
     fn reload(&mut self) -> Result<()> {
+        if self.diff_path.is_some() {
+            return self.reload_diff();
+        }
         let Provenance::File { path } = &self.open.source.provenance else {
             self.status = Some("not a file; nothing to reload".into());
             return Ok(());
