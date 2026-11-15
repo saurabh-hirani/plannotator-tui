@@ -107,7 +107,7 @@ dimmed. The keys also work without opening the menu.
 | tree | `j`/`k`; `Enter` open; `.` show/hide dot-prefixed entries (`.agents/`, `.github/`); `E` sends new notes across all reviewed files, including collapsed folders |
 | orphans | `O` show/hide orphaned annotations at their last-known location, dim and marked stale |
 | checkpoint (`--checkpoint`) | each `E` snapshots the file into `.plannotator-checkpoint/` (a copy plus a `.meta` of the comments), on demand, deduped; `T` toggles to the diff view |
-| diff (`--diff`) | read-only before/after of the two newest checkpoints over the whole document; `L` stacked/unified, `c` show/hide comments, `r` reload, `T` toggle to the live view |
+| diff (`--diff`) | read-only before/after of the two newest checkpoints over the whole document; `v`/`V` select and `y` copy; `L` stacked/unified, `c` show/hide comments, `r` reload, `T` toggle to the live view |
 
 These are the defaults; every key can be rebound under `[keys]` (see [Keys](#keys)).
 
