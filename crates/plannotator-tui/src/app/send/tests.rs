@@ -265,3 +265,72 @@ fn at_80_columns_a_file_review_keeps_its_annotation_count() {
     assert!(footer.contains("a/d mark"), "wide enough for the mark hint: {footer:?}");
     std::fs::remove_dir_all(root).expect("cleanup");
 }
+
+/// Under --checkpoint, a send writes a numbered snapshot and a meta beside the file.
+#[test]
+fn checkpoint_writes_a_snapshot_and_meta_on_send() {
+    let (root, mut app, _) = file_app("checkpoint");
+    app.checkpoint = true;
+    app.add_quote_annotation("two", Kind::Comment, "a note on two".into()).expect("note");
+    app.send_feedback().expect("send");
+
+    let dir = root.join("docs").join(crate::checkpoint::DIR);
+    let snapshot = dir.join("a.md.v1");
+    let meta_path = dir.join("a.md.v1.meta");
+    assert!(snapshot.is_file(), "the snapshot is written");
+    assert!(meta_path.is_file(), "the meta is written");
+    assert_eq!(
+        std::fs::read_to_string(&snapshot).expect("snapshot"),
+        app.open.doc.source,
+        "the snapshot is a byte copy of the document"
+    );
+    let meta: crate::checkpoint::Meta =
+        serde_json::from_str(&std::fs::read_to_string(&meta_path).expect("meta")).expect("parse");
+    assert_eq!(meta.version, 1);
+    assert_eq!(meta.entries.len(), 1);
+    assert_eq!(meta.entries[0].body, "a note on two");
+    assert!(meta.entries[0].line >= 1);
+
+    // A second send with a new note increments to v2 and keeps v1. (A send with nothing
+    // new to deliver is a no-op and writes no checkpoint.)
+    app.add_quote_annotation("three", Kind::Comment, "a note on three".into()).expect("note 2");
+    app.send_feedback().expect("send again");
+    assert!(dir.join("a.md.v2").is_file(), "v2 written");
+    assert!(snapshot.is_file(), "v1 kept");
+
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// Without --checkpoint, a send writes no snapshot directory.
+#[test]
+fn no_checkpoint_dir_without_the_flag() {
+    let (root, mut app, _) = file_app("no-checkpoint");
+    app.add_quote_annotation("two", Kind::Comment, "note".into()).expect("note");
+    app.send_feedback().expect("send");
+    assert!(!root.join("docs").join(crate::checkpoint::DIR).exists(), "no checkpoint dir");
+    std::fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// Every E checkpoints, even when the send has nothing new to deliver; an unchanged state
+/// is deduped so repeated E does not pile up versions.
+#[test]
+fn checkpoint_fires_on_every_e_and_dedupes_unchanged_state() {
+    let (root, mut app, _) = file_app("checkpoint-every-e");
+    app.checkpoint = true;
+    app.add_quote_annotation("two", Kind::Comment, "note".into()).expect("note");
+    app.send_feedback().expect("first E");
+    let dir = root.join("docs").join(crate::checkpoint::DIR);
+    assert!(dir.join("a.md.v1").is_file(), "v1 after the first E");
+
+    // A second E with nothing changed: the send is a no-op, and the checkpoint dedupes.
+    app.send_feedback().expect("second E, unchanged");
+    assert!(!dir.join("a.md.v2").exists(), "unchanged state writes no v2");
+    assert!(app.status.as_deref().is_some_and(|s| s.contains("checkpoint unchanged")), "{:?}", app.status);
+
+    // A changed annotation, then E: now a v2 is written.
+    app.add_quote_annotation("three", Kind::Comment, "another".into()).expect("note 2");
+    app.send_feedback().expect("third E, changed");
+    assert!(dir.join("a.md.v2").is_file(), "v2 after a change");
+
+    std::fs::remove_dir_all(root).expect("cleanup");
+}

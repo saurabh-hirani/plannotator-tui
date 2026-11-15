@@ -193,11 +193,20 @@ impl App {
                     .max_by_key(|&k| priority(k));
                 let Some(kind) = kind else { continue };
                 row_has_annotation = true;
-                let style = match kind {
-                    Kind::Comment => Style::new().bg(palette().comment_bg),
-                    Kind::LooksGood => Style::new().bg(palette().approve_bg),
-                    Kind::Delete => {
-                        Style::new().fg(palette().delete).add_modifier(Modifier::CROSSED_OUT | Modifier::DIM)
+                // In the read-only diff view, the comment highlight uses a softer dedicated
+                // background (the kind tints are tuned for live annotating and read muddy
+                // under the diff's dim italic text).
+                let style = if self.read_only {
+                    // Underline marks the commented span as a comment, telling it apart from
+                    // the change highlights (which are background only).
+                    Style::new().bg(palette().diff_comment_bg).add_modifier(Modifier::UNDERLINED)
+                } else {
+                    match kind {
+                        Kind::Comment => Style::new().bg(palette().comment_bg),
+                        Kind::LooksGood => Style::new().bg(palette().approve_bg),
+                        Kind::Delete => Style::new()
+                            .fg(palette().delete)
+                            .add_modifier(Modifier::CROSSED_OUT | Modifier::DIM),
                     }
                 };
                 buf.set_style(Rect { x: doc.x + col as u16, y: screen_y, width: 1, height: 1 }, style);
@@ -223,6 +232,21 @@ impl App {
                     buf.set_style(Rect { x: doc.x + col as u16, y: screen_y, width: 1, height: 1 }, style);
                 }
             }
+
+            // Diff word changes: removed words (before/`-` text) and added words (after/`+`
+            // text) get their own backgrounds, so a change reads at the word level. Comment
+            // highlights are separate (the annotation tint above). Only the diff view fills
+            // these lists.
+            paint_diff_words(
+                buf,
+                row,
+                doc,
+                screen_y,
+                &placed,
+                &self.diff_removed,
+                &self.diff_added,
+            );
+
 
             // Search matches sit on top of annotation tints: every match gets the search
             // background, and the one the cursor is on is brightened so `n` / `N` show
@@ -424,8 +448,12 @@ impl App {
                 1 => " · 1 image".to_owned(),
                 n => format!(" · {n} images"),
             };
+            // The diff view's comments have throwaway ids (regenerated on each layout
+            // render), so show a stable "comment" label there instead of the id tail.
+            let id_label =
+                if self.read_only { "comment".to_owned() } else { short_id(&placed.annotation.id) };
             let title = Span::styled(
-                format!(" {} {}{images}{sent} ", glyph(kind), short_id(&placed.annotation.id)),
+                format!(" {} {id_label}{images}{sent} ", glyph(kind)),
                 Style::new().fg(accent(kind)),
             );
             let bubble = Block::default()
@@ -696,6 +724,42 @@ impl App {
         let find =
             if self.tree.is_some() && self.pending.is_none() { key(Action::QuickOpen, "find") } else { None };
         help.into_iter().chain([find]).flatten().collect()
+    }
+}
+
+/// Paint the diff view's word-change backgrounds on `row`: removed words (before/`-` text)
+/// and added words (after/`+` text). A cell inside a commented span is skipped so the
+/// comment tint stays the stronger signal.
+fn paint_diff_words(
+    buf: &mut ratatui::buffer::Buffer,
+    row: &crate::wrap::Row,
+    doc: Rect,
+    screen_y: u16,
+    placed: &[crate::store::Placed<'_>],
+    removed: &[std::ops::Range<usize>],
+    added: &[std::ops::Range<usize>],
+) {
+    if removed.is_empty() && added.is_empty() {
+        return;
+    }
+    for (col, cell) in row.cells.iter().enumerate().take(usize::from(doc.width)) {
+        let Some(offset) = cell else { continue };
+        if placed.iter().any(|p| p.range.contains(offset)) {
+            continue;
+        }
+        let bg = if removed.iter().any(|r| r.contains(offset)) {
+            Some(palette().diff_removed_bg)
+        } else if added.iter().any(|r| r.contains(offset)) {
+            Some(palette().diff_added_bg)
+        } else {
+            None
+        };
+        if let Some(bg) = bg {
+            buf.set_style(
+                Rect { x: doc.x + col as u16, y: screen_y, width: 1, height: 1 },
+                Style::new().bg(bg),
+            );
+        }
     }
 }
 

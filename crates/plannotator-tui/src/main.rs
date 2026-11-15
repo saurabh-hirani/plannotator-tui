@@ -3,9 +3,11 @@
 mod app;
 mod archive;
 mod base64;
+mod checkpoint;
 mod cli;
 mod config;
 mod delivery;
+mod diff;
 mod doc;
 mod editor;
 mod export;

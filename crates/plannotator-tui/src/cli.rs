@@ -28,6 +28,7 @@ use crate::rex::agent::RexAgent;
 
 pub(crate) const USAGE: &str = "usage:
   plannotator-tui <file.md | folder> [--gate] [--json] [--require-approval] [--result-file <path>]
+  plannotator-tui <file.md> [--checkpoint | --diff]
   plannotator-tui --export <file.md>
   plannotator-tui --bench <file.md>
   plannotator-tui --blocks <file.md>
@@ -207,9 +208,33 @@ fn tool(args: &[String]) -> Result<()> {
         Some("rex") => crate::rex::cli::run(args.get(1..).unwrap_or_default()),
         Some("last") => last_command(args.get(1..).unwrap_or_default()),
         Some(flag) if flag.starts_with("--") => anyhow::bail!("unknown flag {flag}\n{USAGE}"),
-        Some(_) => interactive(&path(0)?),
+        Some(_) => {
+            let mode = view_mode(args.get(1..).unwrap_or_default())?;
+            interactive(&path(0)?, mode)
+        }
         None => anyhow::bail!(USAGE),
     }
+}
+
+/// The optional view flag on an interactive single-file open: `--checkpoint` snapshots on
+/// each `E`, `--diff` shows a read-only before/after of the two newest snapshots. The two
+/// are mutually exclusive; any other trailing flag is an error.
+fn view_mode(rest: &[String]) -> Result<crate::app::ViewMode> {
+    use crate::app::ViewMode;
+    let mut mode = ViewMode::Normal;
+    for arg in rest {
+        let next = match arg.as_str() {
+            "--checkpoint" => ViewMode::Checkpoint,
+            "--diff" => ViewMode::Diff,
+            other => anyhow::bail!("unknown flag {other}\n{USAGE}"),
+        };
+        anyhow::ensure!(
+            mode == ViewMode::Normal,
+            "--checkpoint and --diff are mutually exclusive"
+        );
+        mode = next;
+    }
+    Ok(mode)
 }
 
 /// `plannotator-tui config`: where the file is and what is in effect.
@@ -396,7 +421,7 @@ fn herdr_pane() -> Result<()> {
         })
     } else {
         let path = env.file.clone().unwrap_or(std::env::current_dir().context("current directory")?);
-        if env.gate { gated_pane(&path, env.result_file.as_deref()) } else { interactive(&path) }
+        if env.gate { gated_pane(&path, env.result_file.as_deref()) } else { interactive(&path, crate::app::ViewMode::Normal) }
     };
     // The pane closes when we exit; an error that flashes by is an error nobody can read.
     if let Err(err) = &result {
@@ -464,8 +489,20 @@ pub(crate) fn gated_pane(path: &PathBuf, result_file: Option<&Path>) -> Result<(
     }
 }
 
-pub(crate) fn interactive(path: &PathBuf) -> Result<()> {
-    run_ui(|width| open_app(path, width, true))
+pub(crate) fn interactive(path: &PathBuf, mode: crate::app::ViewMode) -> Result<()> {
+    use crate::app::ViewMode;
+    if mode == ViewMode::Diff {
+        anyhow::ensure!(!path.is_dir(), "--diff is for a single file, not a folder");
+        return run_ui(|width| App::open_diff(path, width));
+    }
+    run_ui(move |width| {
+        let mut app = open_app(path, width, true)?;
+        if mode == ViewMode::Checkpoint {
+            anyhow::ensure!(!path.is_dir(), "--checkpoint is for a single file, not a folder");
+            app.checkpoint = true;
+        }
+        Ok(app)
+    })
 }
 
 /// Own the terminal for one app: `build` gets the document width the screen allows.

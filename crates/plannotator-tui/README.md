@@ -23,6 +23,8 @@ cargo build --release
 | quick open (folder) | `Ctrl+P` find a Markdown file by name anywhere in the folder · type to filter · ↑/↓ or wheel select · `Enter` or click open · `Esc` cancel |
 | search (document) | `/` search forward, `?` search backward (plain substring) · type then `Enter` to jump to the first match in that direction · `n` / `N` next / previous (next follows the search direction) · `Esc` cancels the prompt; in the document `Esc` clears an active search before it quits |
 | orphans | `O` show or hide orphaned annotations (their anchored text is gone) at their last-known location, drawn dim and marked stale · off by default · the status line reports how many there are |
+| checkpoint (`--checkpoint`) | each `E` snapshots the file on demand into `.plannotator-checkpoint/` beside it: `<name>.v<N>` (a copy) and `<name>.v<N>.meta` (the comments, their kind/quote/range and computed line number) · the version increments, an unchanged state is deduped · the clipboard copy is unchanged |
+| diff (`--diff`) | read-only before/after of the two newest checkpoints, shown over the whole document: unchanged text plain, changed blocks as before/after · changed words highlighted (removed in the before, added in the after), commented spans underlined with their rail bubble · `L` toggle stacked/unified layout · `c` show/hide comments · `r` reload to the latest checkpoints · `/` search · `q` quit · annotating is disabled |
 | archive | `j`/`k` or ↑/↓ select · `Enter` or click restore · `Esc` close |
 
 Selections and exports are copied to the terminal clipboard (OSC 52).
